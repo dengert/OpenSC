@@ -29,14 +29,14 @@ opensc_pkcs11_la_CFLAGS = $(OPENSC_PKCS11_CFLAGS)
 opensc_pkcs11_la_LIBADD = $(OPENSC_PKCS11_LIBS)
 opensc_pkcs11_la_LDFLAGS = $(AM_LDFLAGS) \
 	-export-symbols "$(srcdir)/pkcs11.exports" \
-	-module -shared -avoid-version -no-undefined
+	-module -shared -avoid-version -no-undefined $(OPENSC_MODULE_LDFLAGS)
 
 onepin_opensc_pkcs11_la_SOURCES = $(OPENSC_PKCS11_SRC) $(OPENSC_PKCS11_INC)
 onepin_opensc_pkcs11_la_CFLAGS = -DMODULE_APP_NAME=\"onepin-opensc-pkcs11\" $(OPENSC_PKCS11_CFLAGS)
 onepin_opensc_pkcs11_la_LIBADD = $(OPENSC_PKCS11_LIBS)
 onepin_opensc_pkcs11_la_LDFLAGS = $(AM_LDFLAGS) \
         -export-symbols "$(srcdir)/pkcs11.exports" \
-        -module -shared -avoid-version -no-undefined
+        -module -shared -avoid-version -no-undefined $(OPENSC_MODULE_LDFLAGS)
 
 pkcs11_spy_la_SOURCES = pkcs11-spy.c pkcs11-display.c pkcs11-display.h pkcs11.exports
 pkcs11_spy_la_CFLAGS = $(OPTIONAL_OPENSSL_CFLAGS)
@@ -47,7 +47,7 @@ pkcs11_spy_la_LIBADD = \
 	$(OPTIONAL_OPENSSL_LIBS)
 pkcs11_spy_la_LDFLAGS = $(AM_LDFLAGS) \
 	-export-symbols "$(srcdir)/pkcs11.exports" \
-	-module -shared -avoid-version -no-undefined
+	-module -shared -avoid-version -no-undefined $(OPENSC_MODULE_LDFLAGS)
 
 if WIN32
 opensc_pkcs11_la_SOURCES += versioninfo-pkcs11.rc
