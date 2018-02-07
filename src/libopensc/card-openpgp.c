@@ -417,6 +417,20 @@ pgp_init(sc_card_t *card)
 		file->namelen = r;
 	}
 
+       /*
+	* TODO EXPERMENTAL
+	* TEST CODE IT SEE IF WE CAN GET BOTH PIV AND OPENPGP ACTIVE IN PKCS#11 
+	* We will simulate an EF.DIR having already been parsed. 
+	*/
+
+	card->app_count = 1;
+
+	card->app[0] = calloc(1,sizeof(sc_app_info_t));
+	card->app[0]->label = strdup("openpgp");
+	memcpy(card->app[0]->aid.value,"\xD2\x76\x00\x01\x24\x01",6);
+	card->app[0]->aid.len = 6;
+	card->app[0]->rec_nr = -1;
+
 	/* read information from AID */
 	if (file->namelen == 16) {
 		/* OpenPGP card spec 1.1 & 2.0, section 4.2.1 & 4.1.2.1 */

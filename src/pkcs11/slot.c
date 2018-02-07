@@ -202,33 +202,32 @@ CK_RV card_removed(sc_reader_t * reader)
 			if (slot->p11card)
 				p11card = slot->p11card;
 			slot_token_removed(slot->id);
-		}
-	}
 
-	if (p11card) {
-		p11card->framework->unbind(p11card);
-		sc_disconnect_card(p11card->card);
-		for (i=0; i < p11card->nmechanisms; ++i) {
-			if (p11card->mechanisms[i]->free_mech_data) {
-				p11card->mechanisms[i]->free_mech_data(p11card->mechanisms[i]->mech_data);
+			if (p11card) {
+				p11card->framework->unbind(p11card);
+				sc_disconnect_card(p11card->card);
+				for (i=0; i < p11card->nmechanisms; ++i) {
+					if (p11card->mechanisms[i]->free_mech_data) {
+						p11card->mechanisms[i]->free_mech_data(p11card->mechanisms[i]->mech_data);
+					}
+					free(p11card->mechanisms[i]);
+				}
+				free(p11card->mechanisms);
+				free(p11card);
+				p11card = NULL;
 			}
-			free(p11card->mechanisms[i]);
 		}
-		free(p11card->mechanisms);
-		free(p11card);
 	}
 
 	return CKR_OK;
 }
 
+static CK_RV card_detect_driver(sc_reader_t *reader, char *driver_short_name);
 
 CK_RV card_detect(sc_reader_t *reader)
 {
-	struct sc_pkcs11_card *p11card = NULL;
 	int rc;
 	CK_RV rv;
-	unsigned int i;
-	int j;
 
 	sc_log(context, "%s: Detecting smart card", reader->name);
 	/* Check if someone inserted a card */
@@ -256,10 +255,42 @@ again:
 		goto again;
 	}
 
+	/* EXPERIMENTAL
+	 * if its a Yubikey4 we want both PIV-II and OpenPGP loaded.
+	 * this is a proof of concept mod 
+	 */
+	if (reader->atr.len == 18
+			&& !memcmp(reader->atr.value,
+			"\x3b\xf8\x13\x00\x00\x81\x31\xfe\x15\x59\x75\x62\x69\x6b\x65\x79\x34\xd4",18)) {
+		rv = card_detect_driver(reader, "PIV-II");
+		rv = card_detect_driver(reader, "openpgp");
+	} else {
+		rv = card_detect_driver(reader, NULL);
+	}
+
+	return rv;
+
+}
+
+
+static CK_RV card_detect_driver(sc_reader_t *reader, char *driver_short_name)
+{
+	struct sc_pkcs11_card *p11card = NULL;
+	int rc;
+	CK_RV rv;
+	unsigned int i;
+	int j;
+
 	/* Locate a slot related to the reader */
 	for (i=0; i<list_size(&virtual_slots); i++) {
 		sc_pkcs11_slot_t *slot = (sc_pkcs11_slot_t *) list_get_at(&virtual_slots, i);
 		if (slot->reader == reader) {
+			if (driver_short_name && slot->p11card
+				&& slot->p11card->card
+				&& slot->p11card->card->driver
+				&& slot->p11card->card->driver->short_name
+				&& strcmp(slot->p11card->card->driver->short_name,driver_short_name))
+					continue;
 			p11card = slot->p11card;
 			break;
 		}
@@ -275,8 +306,15 @@ again:
 	}
 
 	if (p11card->card == NULL) {
-		sc_log(context, "%s: Connecting ... ", reader->name);
+		sc_log(context, "%s: Connecting ...  Driver %s:", reader->name, driver_short_name ? driver_short_name : "generic");
+
+		if (driver_short_name)
+			sc_set_card_driver(context, driver_short_name);
+
 		rc = sc_connect_card(reader, &p11card->card);
+		if (driver_short_name)
+			sc_set_card_driver(context, NULL);
+
 		if (rc != SC_SUCCESS)   {
 			sc_log(context, "%s: SC connect card error %i", reader->name, rc);
 			return sc_to_cryptoki_error(rc, NULL);

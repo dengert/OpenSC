@@ -3167,6 +3167,19 @@ static int piv_init(sc_card_t *card)
 			r = sc_transmit_apdu(card, &apdu);
 			priv->yubico_version = (yubico_version_buf[0]<<16) | (yubico_version_buf[1] <<8) | yubico_version_buf[2];
 			sc_log(card->ctx, "Yubico card->type=%d, r=0x%08x version=0x%08x", card->type, r, priv->yubico_version);
+			/*
+			 * TODO EXPERMENTAL
+			 * TEST CODE IT SEE IF WE CAN GET BOTH PIV AND OPENPGP ACTIVE IN PKCS#11 
+			 * We will simulate an EF.DIR having already been parsed. 
+			 */
+			card->app_count = 1;
+
+			card->app[0] = calloc(1,sizeof(sc_app_info_t));
+			card->app[0]->label = strdup("PIV-II");
+			memcpy(card->app[0]->aid.value, "\xA0\x00\x00\x03\x08\x00\x00\x10\x00", 9);
+			card->app[0]->aid.len = 9;
+			card->app[0]->rec_nr = -1;
+
 			break;
 	}
 
