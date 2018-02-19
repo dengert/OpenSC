@@ -150,6 +150,7 @@ void empty_slot(struct sc_pkcs11_slot *slot)
 
 
 /* create slots associated with a reader, called whenever a reader is seen. */
+/* if virtual reader, ignore a lot of this */
 CK_RV initialize_reader(sc_reader_t *reader)
 {
 	unsigned int i;
@@ -176,11 +177,14 @@ CK_RV initialize_reader(sc_reader_t *reader)
 			return rv;
 	}
 
-	sc_log(context, "Initialize reader '%s': detect SC card presence", reader->name);
-	if (sc_detect_card_presence(reader))   {
-		sc_log(context, "Initialize reader '%s': detect PKCS11 card presence", reader->name);
-		card_detect(reader);
-	}
+	/* we know card is present for a virtual reader */
+//	if (reader->vreader_index == 0) {
+		sc_log(context, "Initialize reader '%s': detect SC card presence", reader->name);
+		if (sc_detect_card_presence(reader))   {
+			sc_log(context, "Initialize reader '%s': detect PKCS11 card presence", reader->name);
+			card_detect(reader);
+		}
+//	}
 
 	sc_log(context, "Reader '%s' initialized", reader->name);
 	return CKR_OK;
@@ -202,34 +206,37 @@ CK_RV card_removed(sc_reader_t * reader)
 			if (slot->p11card)
 				p11card = slot->p11card;
 			slot_token_removed(slot->id);
-
-			if (p11card) {
-				p11card->framework->unbind(p11card);
-				sc_disconnect_card(p11card->card);
-				for (i=0; i < p11card->nmechanisms; ++i) {
-					if (p11card->mechanisms[i]->free_mech_data) {
-						p11card->mechanisms[i]->free_mech_data(p11card->mechanisms[i]->mech_data);
-					}
-					free(p11card->mechanisms[i]);
-				}
-				free(p11card->mechanisms);
-				free(p11card);
-				p11card = NULL;
-			}
 		}
+	}
+
+	if (p11card) {
+		p11card->framework->unbind(p11card);
+		sc_log(context,  "Disconnecting vslot:%d card:%p",i, p11card->card);
+		sc_disconnect_card(p11card->card);
+		for (i=0; i < p11card->nmechanisms; ++i) {
+			if (p11card->mechanisms[i]->free_mech_data) {
+				p11card->mechanisms[i]->free_mech_data(p11card->mechanisms[i]->mech_data);
+			}
+			free(p11card->mechanisms[i]);
+		}
+		free(p11card->mechanisms);
+		free(p11card);
 	}
 
 	return CKR_OK;
 }
 
-static CK_RV card_detect_driver(sc_reader_t *reader, char *driver_short_name);
+static CK_RV card_detect_driver(sc_reader_t *reader, int *driver_idx);
 
 CK_RV card_detect(sc_reader_t *reader)
 {
 	int rc;
 	CK_RV rv;
+	int driver_idx = 0;
+	sc_reader_t *old_reader;
+	sc_reader_t *new_reader = NULL;
 
-	sc_log(context, "%s: Detecting smart card", reader->name);
+	sc_log(context, "%s: Detecting smart card card_driver_index:%d", reader->name, reader->card_driver_index);
 	/* Check if someone inserted a card */
 again:
 	rc = sc_detect_card_presence(reader);
@@ -259,21 +266,57 @@ again:
 	 * if its a Yubikey4 we want both PIV-II and OpenPGP loaded.
 	 * this is a proof of concept mod 
 	 */
-	if (reader->atr.len == 18
-			&& !memcmp(reader->atr.value,
-			"\x3b\xf8\x13\x00\x00\x81\x31\xfe\x15\x59\x75\x62\x69\x6b\x65\x79\x34\xd4",18)) {
-		rv = card_detect_driver(reader, "PIV-II");
-		rv = card_detect_driver(reader, "openpgp");
-	} else {
-		rv = card_detect_driver(reader, NULL);
+	/* if already connected to a card driver, just do this reader */
+	if (reader->card_driver_index  >= 0) {
+		driver_idx = reader->card_driver_index;
+		/* setup pkcs11 for this reader only */
+		rv = card_detect_driver(reader, &driver_idx);
+		return rv;
 	}
 
+	/* No card driver found yet, see if we can find it and card drivers for other applets */
+	rv = card_detect_driver(reader, &driver_idx);
+	if (rv == 0) {
+		reader->card_driver_index = driver_idx;
+	}
+
+	/* A forced driver means only one card driver */
+	if (rv == 0 && context->forced_driver == NULL) {
+
+		/* now find if there are more applets/card drivers */
+		if (reader->ops->clone_reader) {
+			old_reader = reader;
+			rv = 0;
+			while (rv == CKR_OK) {
+				/* we need to get another reader so we can test for another applet */
+				/* use reader as pattern for it. */
+				rv = reader->ops->clone_reader(old_reader->ctx, old_reader, &new_reader);
+				if (rv != 0){
+					goto err;
+				}
+				driver_idx++; /* start with next driver */
+				rv = card_detect_driver(new_reader, &driver_idx);
+				if (rv == 0) {	/* found a new card driver */
+					new_reader->card_driver_index = driver_idx;
+					old_reader = new_reader;
+					new_reader = NULL;
+				}
+			}
+			if (rv == CKR_TOKEN_NOT_RECOGNIZED) {
+				rv = CKR_OK;
+			}
+		}
+	}
+
+err:
+	if (new_reader)
+		_sc_delete_reader(reader->ctx, new_reader);
 	return rv;
 
 }
 
 
-static CK_RV card_detect_driver(sc_reader_t *reader, char *driver_short_name)
+static CK_RV card_detect_driver(sc_reader_t *reader, int *driver_idx)
 {
 	struct sc_pkcs11_card *p11card = NULL;
 	int rc;
@@ -281,16 +324,12 @@ static CK_RV card_detect_driver(sc_reader_t *reader, char *driver_short_name)
 	unsigned int i;
 	int j;
 
+	sc_log(context, "%s: card_detect_driver  card_driver_index:%d", reader->name, reader->card_driver_index);
+
 	/* Locate a slot related to the reader */
 	for (i=0; i<list_size(&virtual_slots); i++) {
 		sc_pkcs11_slot_t *slot = (sc_pkcs11_slot_t *) list_get_at(&virtual_slots, i);
 		if (slot->reader == reader) {
-			if (driver_short_name && slot->p11card
-				&& slot->p11card->card
-				&& slot->p11card->card->driver
-				&& slot->p11card->card->driver->short_name
-				&& strcmp(slot->p11card->card->driver->short_name,driver_short_name))
-					continue;
 			p11card = slot->p11card;
 			break;
 		}
@@ -306,14 +345,10 @@ static CK_RV card_detect_driver(sc_reader_t *reader, char *driver_short_name)
 	}
 
 	if (p11card->card == NULL) {
-		sc_log(context, "%s: Connecting ...  Driver %s:", reader->name, driver_short_name ? driver_short_name : "generic");
+		sc_log(context, "%s: Connecting ...  Driver_idx: %d", reader->name, driver_idx ? *driver_idx : 0);
 
-		if (driver_short_name)
-			sc_set_card_driver(context, driver_short_name);
 
-		rc = sc_connect_card(reader, &p11card->card);
-		if (driver_short_name)
-			sc_set_card_driver(context, NULL);
+		rc = sc_connect_card_ext(reader, &p11card->card, driver_idx);
 
 		if (rc != SC_SUCCESS)   {
 			sc_log(context, "%s: SC connect card error %i", reader->name, rc);

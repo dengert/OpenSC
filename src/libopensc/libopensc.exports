@@ -70,6 +70,7 @@ sc_compare_path_prefix
 sc_compute_signature
 sc_concatenate_path
 sc_connect_card
+sc_connect_card_ext
 sc_context_create
 sc_copy_asn1_entry
 sc_create_file
