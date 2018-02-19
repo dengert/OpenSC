@@ -74,7 +74,7 @@
 #endif
 
 /* Logging */
-#define PCSC_TRACE(reader, desc, rv) do { sc_log(reader->ctx, "%s:" desc ": 0x%08lx\n", reader->name, (unsigned long)((ULONG)rv)); } while (0)
+#define PCSC_TRACE(reader, desc, rv) do { sc_log(reader->ctx, "%s:" desc ": 0x%08lx\n", reader->pname, (unsigned long)((ULONG)rv)); } while (0)
 #define PCSC_LOG(ctx, desc, rv) do { sc_log(ctx, desc ": 0x%08lx\n", (unsigned long)((ULONG)rv)); } while (0)
 
 struct pcsc_global_private_data {
@@ -322,7 +322,7 @@ static int refresh_attributes(sc_reader_t *reader)
 		return SC_ERROR_NOT_ALLOWED;
 
 	if (priv->reader_state.szReader == NULL) {
-		priv->reader_state.szReader = reader->name;
+		priv->reader_state.szReader = reader->pname;
 		priv->reader_state.dwCurrentState = SCARD_STATE_UNAWARE;
 		priv->reader_state.dwEventState = SCARD_STATE_UNAWARE;
 	} else {
@@ -541,13 +541,13 @@ static int pcsc_connect(sc_reader_t *reader)
 
 
 	if (!priv->gpriv->cardmod) {
-		rv = priv->gpriv->SCardConnect(priv->gpriv->pcsc_ctx, reader->name,
+		rv = priv->gpriv->SCardConnect(priv->gpriv->pcsc_ctx, reader->pname,
 				priv->gpriv->connect_exclusive ? SCARD_SHARE_EXCLUSIVE : SCARD_SHARE_SHARED,
 				protocol, &card_handle, &active_proto);
 #ifdef __APPLE__
 		if (rv == (LONG)SCARD_E_SHARING_VIOLATION) {
 			sleep(1); /* Try again to compete with Tokend probes */
-			rv = priv->gpriv->SCardConnect(priv->gpriv->pcsc_ctx, reader->name,
+			rv = priv->gpriv->SCardConnect(priv->gpriv->pcsc_ctx, reader->pname,
 					priv->gpriv->connect_exclusive ? SCARD_SHARE_EXCLUSIVE : SCARD_SHARE_SHARED,
 					protocol, &card_handle, &active_proto);
 		}
@@ -1230,20 +1230,22 @@ static void detect_reader_features(sc_reader_t *reader, SCARDHANDLE card_handle)
 }
 
 int pcsc_add_reader(sc_context_t *ctx,
-	   	char *reader_name, size_t reader_name_len,
+	   	char *reader_name, size_t reader_name_len, int v_idx,
 		sc_reader_t **out_reader)
 {
 	int ret = SC_ERROR_INTERNAL;
+	int r;
 	struct pcsc_global_private_data *gpriv = (struct pcsc_global_private_data *) ctx->reader_drv_data;
 	struct pcsc_private_data *priv;
 	sc_reader_t *reader;
 
-	sc_log(ctx, "Adding new PC/SC reader '%s'", reader_name);
+	sc_log(ctx, "Adding new PC/SC reader '%s' v_idx:%d", reader_name, v_idx);
 
 	if ((reader = calloc(1, sizeof(sc_reader_t))) == NULL) {
 		ret = SC_ERROR_OUT_OF_MEMORY;
 		goto err1;
 	}
+	reader->card_driver_index = -1; /* not connected to a card yet */
 	*out_reader = reader;
 	if ((priv = calloc(1, sizeof(struct pcsc_private_data))) == NULL) {
 		ret = SC_ERROR_OUT_OF_MEMORY;
@@ -1255,9 +1257,28 @@ int pcsc_add_reader(sc_context_t *ctx,
 	reader->drv_data = priv;
 	reader->ops = &pcsc_ops;
 	reader->driver = &pcsc_drv;
-	if ((reader->name = strdup(reader_name)) == NULL) {
+	if ((reader->pname = strdup(reader_name)) == NULL) {
 		ret = SC_ERROR_OUT_OF_MEMORY;
 		goto err1;
+	}
+	reader->vreader_index = v_idx;
+	if (v_idx == 0) {
+		if ((reader->name = strdup(reader_name)) == NULL) {
+			ret = SC_ERROR_OUT_OF_MEMORY;
+			goto err1;
+		}
+	} else {
+		char buf[256];
+		r = snprintf(buf, sizeof(buf), "%s[%d]", reader_name, v_idx);
+		if( r < 0 || (unsigned int)r > sizeof(buf)) {
+
+			ret=SC_ERROR_INTERNAL;
+			goto err1;
+		}
+		if ((reader->name = strdup(buf)) == NULL) {
+			ret = SC_ERROR_OUT_OF_MEMORY;
+			goto err1;
+		}
 	}
 
 	ret = _sc_add_reader(ctx, reader);
@@ -1266,6 +1287,15 @@ int pcsc_add_reader(sc_context_t *ctx,
 
 err1:
 	return ret;
+}
+
+static int pcsc_clone_reader(struct sc_context *ctx, sc_reader_t *reader, sc_reader_t  **out_reader)
+{
+	int r;
+
+	r = pcsc_add_reader(ctx, reader->pname, strlen(reader->pname), reader->vreader_index + 1, out_reader);
+	
+	return r;
 }
 
 static int pcsc_detect_readers(sc_context_t *ctx)
@@ -1353,30 +1383,40 @@ static int pcsc_detect_readers(sc_context_t *ctx)
 		goto out;
 	}
 
+	/*
+	 * there is no longer a 1-to-1 mapping between the reader_name
+	 * returned by SCardListReaders and reader->name.
+	 * We will save the reader_name as teh reader->pname
+	 * With virtual readers, one for each applet on card,
+	 * each card-driver i.e. applet gets its own card_handle and
+	 * lock at the PCSC level.
+	 */
+
 	for (reader_name = reader_buf; *reader_name != '\x0';
-		   	reader_name += strlen(reader_name) + 1) {
+			reader_name += strlen(reader_name) + 1) {
 		sc_reader_t *reader = NULL, *old_reader = NULL;
 		struct pcsc_private_data *priv = NULL;
 		int found = 0;
 
-		for (i=0;i < sc_ctx_get_reader_count(ctx) && !found;i++) {
+		/* look at all readers both real and virtual */
+		/* because more then virtual reader may have same pname */
+		for (i=0;i < sc_ctx_get_reader_count(ctx);i++) {
 			old_reader = sc_ctx_get_reader(ctx, i);
 			if (old_reader == NULL) {
 				ret = SC_ERROR_INTERNAL;
 				goto out;
 			}
-			if (!strcmp(old_reader->name, reader_name)) {
-				found = 1;
+			if (!strcmp(old_reader->pname, reader_name)) {
+				found++; /* may be more then one */
+				old_reader->flags &= ~SC_READER_REMOVED;
 			}
 		}
-
-		/* Reader already available, skip */
 		if (found) {
-			old_reader->flags &= ~SC_READER_REMOVED;
-			continue;
-		}
+			continue; /* 1 or more sc_readers have the pcsc reader */
+		} 
 
-		ret = pcsc_add_reader(ctx, reader_name, strlen(reader_name), &reader);
+		/* new reader from pcsc */
+		ret = pcsc_add_reader(ctx, reader_name, strlen(reader_name), 0, &reader);
 		if (ret != SC_SUCCESS) {
 			_sc_delete_reader(ctx, reader);
 			continue;
@@ -1391,16 +1431,16 @@ static int pcsc_detect_readers(sc_context_t *ctx)
 		/* Use DIRECT mode only if there is no card in the reader */
 		if (!(reader->flags & SC_READER_CARD_PRESENT)) {
 #ifndef _WIN32	/* Apple 10.5.7 and pcsc-lite previous to v1.5.5 do not support 0 as protocol identifier */
-			rv = gpriv->SCardConnect(gpriv->pcsc_ctx, reader->name, SCARD_SHARE_DIRECT, SCARD_PROTOCOL_T0|SCARD_PROTOCOL_T1, &card_handle, &active_proto);
+			rv = gpriv->SCardConnect(gpriv->pcsc_ctx, reader->pname, SCARD_SHARE_DIRECT, SCARD_PROTOCOL_T0|SCARD_PROTOCOL_T1, &card_handle, &active_proto);
 #else
-			rv = gpriv->SCardConnect(gpriv->pcsc_ctx, reader->name, SCARD_SHARE_DIRECT, 0, &card_handle, &active_proto);
+			rv = gpriv->SCardConnect(gpriv->pcsc_ctx, reader->pname, SCARD_SHARE_DIRECT, 0, &card_handle, &active_proto);
 #endif
 			PCSC_TRACE(reader, "SCardConnect(DIRECT)", rv);
 		}
 		if (rv == (LONG)SCARD_E_SHARING_VIOLATION) {
 			/* Assume that there is a card in the reader in shared mode if
 			 * direct communication failed */
-			rv = gpriv->SCardConnect(gpriv->pcsc_ctx, reader->name,
+			rv = gpriv->SCardConnect(gpriv->pcsc_ctx, reader->pname,
 					SCARD_SHARE_SHARED,
 					SCARD_PROTOCOL_T0|SCARD_PROTOCOL_T1, &card_handle,
 					&active_proto);
@@ -2307,7 +2347,7 @@ int pcsc_use_reader(sc_context_t *ctx, void * pcsc_context_handle, void * pcsc_c
 				reader_name, &reader_name_size)) {
 		sc_reader_t *reader = NULL;
 
-		ret = pcsc_add_reader(ctx, reader_name, reader_name_size, &reader);
+		ret = pcsc_add_reader(ctx, reader_name, reader_name_size, 0, &reader);
 		if (ret == SC_SUCCESS) {
 			struct pcsc_private_data *priv = reader->drv_data;
 			priv->pcsc_card = card_handle;
@@ -2340,6 +2380,7 @@ struct sc_reader_driver * sc_get_pcsc_driver(void)
 	pcsc_ops.reset = pcsc_reset;
 	pcsc_ops.use_reader = pcsc_use_reader;
 	pcsc_ops.perform_pace = pcsc_perform_pace;
+	pcsc_ops.clone_reader = pcsc_clone_reader;
 
 	return &pcsc_drv;
 }

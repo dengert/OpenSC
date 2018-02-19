@@ -185,10 +185,21 @@ size_t sc_get_max_send_size(const sc_card_t *card)
 
 int sc_connect_card(sc_reader_t *reader, sc_card_t **card_out)
 {
+	int r = 0;
+
+	r = sc_connect_card_ext(reader, card_out, NULL);
+	return r;
+}
+
+/* Used by pkcs11 to search for additional applets on the same card */
+int sc_connect_card_ext(sc_reader_t *reader, sc_card_t **card_out, int *driver_idx)
+{
 	sc_card_t *card;
 	sc_context_t *ctx;
-	struct sc_card_driver *driver;
+	struct sc_card_driver *driver = NULL;
 	int i, r = 0, idx, connected = 0;
+	int start_driver_index = 0;
+	int driver_found_index = 0;
 
 	if (card_out == NULL || reader == NULL)
 		return SC_ERROR_INVALID_ARGUMENTS;
@@ -196,6 +207,10 @@ int sc_connect_card(sc_reader_t *reader, sc_card_t **card_out)
 	SC_FUNC_CALLED(ctx, SC_LOG_DEBUG_VERBOSE);
 	if (reader->ops->connect == NULL)
 		LOG_FUNC_RETURN(ctx, SC_ERROR_NOT_SUPPORTED);
+
+	/* if looking for additional applet on a card, start from here */
+	if (driver_idx)
+		start_driver_index = *driver_idx;
 
 	card = sc_card_new(ctx);
 	if (card == NULL)
@@ -216,10 +231,17 @@ int sc_connect_card(sc_reader_t *reader, sc_card_t **card_out)
 
 	_sc_parse_atr(reader);
 
+	/* Only look for forced driver if driver_idx == 0 */
+	/* we should have got that on first pass */
+	if (start_driver_index == 0  &&  ctx->forced_driver) {
+		driver = ctx->forced_driver;
+	}
+	
 	/* See if the ATR matches any ATR specified in the config file */
-	if ((driver = ctx->forced_driver) == NULL) {
+	/* TODO should we skip configured ATRs ? */
+	if (driver == NULL) {
 		sc_log(ctx, "matching configured ATRs");
-		for (i = 0; ctx->card_drivers[i] != NULL; i++) {
+		for (i = start_driver_index; ctx->card_drivers[i] != NULL; i++) {
 			driver = ctx->card_drivers[i];
 
 			if (driver->atr_map == NULL ||
@@ -237,6 +259,7 @@ int sc_connect_card(sc_reader_t *reader, sc_card_t **card_out)
 				card->name = src->name;
 				card->type = src->type;
 				card->flags = src->flags;
+				driver_found_index = i; /* save for later */
 				break;
 			}
 			driver = NULL;
@@ -244,10 +267,10 @@ int sc_connect_card(sc_reader_t *reader, sc_card_t **card_out)
 	}
 
 	if (driver != NULL) {
-		/* Forced driver, or matched via ATR mapping from config file */
-		card->driver = driver;
+	/* Forced driver, or matched via ATR mapping from config file */
+	card->driver = driver;
 
-		memcpy(card->ops, card->driver->ops, sizeof(struct sc_card_operations));
+	memcpy(card->ops, card->driver->ops, sizeof(struct sc_card_operations));
 		if (card->ops->match_card != NULL)
 			if (card->ops->match_card(card) != 1)
 				sc_log(ctx, "driver '%s' match_card() failed: %s (will continue anyway)", card->driver->name, sc_strerror(r));
@@ -262,7 +285,7 @@ int sc_connect_card(sc_reader_t *reader, sc_card_t **card_out)
 	}
 	else {
 		sc_log(ctx, "matching built-in ATRs");
-		for (i = 0; ctx->card_drivers[i] != NULL; i++) {
+		for (i = start_driver_index; ctx->card_drivers[i] != NULL; i++) {
 			struct sc_card_driver *drv = ctx->card_drivers[i];
 			const struct sc_card_operations *ops = drv->ops;
 
@@ -271,6 +294,7 @@ int sc_connect_card(sc_reader_t *reader, sc_card_t **card_out)
 				continue;
 			}
 			else if (!(ctx->flags & SC_CTX_FLAG_ENABLE_DEFAULT_DRIVER)
+					/*TODO && start_driver_index == 0 */
 				   	&& !strcmp("default", drv->short_name))   {
 				sc_log(ctx , "ignore 'default' card driver");
 				continue;
@@ -292,6 +316,7 @@ int sc_connect_card(sc_reader_t *reader, sc_card_t **card_out)
 				}
 				goto err;
 			}
+			driver_found_index = i;
 			break;
 		}
 	}
@@ -321,6 +346,8 @@ int sc_connect_card(sc_reader_t *reader, sc_card_t **card_out)
 	}
 #endif
 	*card_out = card;
+	if (driver_idx)
+		*driver_idx = driver_found_index;
 
 	LOG_FUNC_RETURN(ctx, SC_SUCCESS);
 err:

@@ -315,10 +315,13 @@ typedef struct sc_reader {
 	const struct sc_reader_driver *driver;
 	const struct sc_reader_operations *ops;
 	void *drv_data;
-	char *name;
+	char *name; /* used by application/pkcs11 */
+	char *pname; /* used in reader driver */
 	char *vendor;
 	unsigned char version_major;
 	unsigned char version_minor;
+	int card_driver_index;
+	int vreader_index;
 
 	unsigned long flags, capabilities;
 	unsigned int supported_protocols, active_protocol;
@@ -433,6 +436,7 @@ struct sc_reader_operations {
 	int (*reset)(struct sc_reader *, int);
 	/* Used to pass in PC/SC handles to minidriver */
 	int (*use_reader)(struct sc_context *ctx, void *pcsc_context_handle, void *pcsc_card_handle);
+	int (*clone_reader)(struct sc_context *ctx, sc_reader_t *reader, sc_reader_t **out_reader);
 };
 
 /*
@@ -905,8 +909,18 @@ int sc_set_card_driver(sc_context_t *ctx, const char *short_name);
  * Connects to a card in a reader and auto-detects the card driver.
  * The ATR (Answer to Reset) string of the card is also retrieved.
  * @param reader Reader structure
- * @param card The allocated card object will go here */
+ * @param card The allocated card object will go here 
+ */
 int sc_connect_card(sc_reader_t *reader, struct sc_card **card);
+/**
+ * Extension of sc_connect_card to find additional drivers that support
+ * the card. 
+ * @param reader Reader structure
+ * @param card The allocated card object will go here/
+ * @param start search of ctx->card_drivers here, returns index found.
+ * @return SC_SUCCESS on success and an error code otherwise
+ */
+int sc_connect_card_ext(sc_reader_t *reader, struct sc_card **card, int *driver_idx);
 /**
  * Disconnects from a card, and frees the card structure. Any locks
  * made by the application must be released before calling this function.

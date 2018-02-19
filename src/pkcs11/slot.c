@@ -150,6 +150,7 @@ void empty_slot(struct sc_pkcs11_slot *slot)
 
 
 /* create slots associated with a reader, called whenever a reader is seen. */
+/* if virtual reader, ignore a lot of this */
 CK_RV initialize_reader(sc_reader_t *reader)
 {
 	unsigned int i;
@@ -176,11 +177,14 @@ CK_RV initialize_reader(sc_reader_t *reader)
 			return rv;
 	}
 
-	sc_log(context, "Initialize reader '%s': detect SC card presence", reader->name);
-	if (sc_detect_card_presence(reader))   {
-		sc_log(context, "Initialize reader '%s': detect PKCS11 card presence", reader->name);
-		card_detect(reader);
-	}
+	/* we know card is present for a virtual reader */
+//	if (reader->vreader_index == 0) {
+		sc_log(context, "Initialize reader '%s': detect SC card presence", reader->name);
+		if (sc_detect_card_presence(reader))   {
+			sc_log(context, "Initialize reader '%s': detect PKCS11 card presence", reader->name);
+			card_detect(reader);
+		}
+//	}
 
 	sc_log(context, "Reader '%s' initialized", reader->name);
 	return CKR_OK;
@@ -207,6 +211,7 @@ CK_RV card_removed(sc_reader_t * reader)
 
 	if (p11card) {
 		p11card->framework->unbind(p11card);
+		sc_log(context,  "Disconnecting vslot:%d card:%p",i, p11card->card);
 		sc_disconnect_card(p11card->card);
 		for (i=0; i < p11card->nmechanisms; ++i) {
 			if (p11card->mechanisms[i]->free_mech_data) {
@@ -221,16 +226,17 @@ CK_RV card_removed(sc_reader_t * reader)
 	return CKR_OK;
 }
 
+static CK_RV card_detect_driver(sc_reader_t *reader, int *driver_idx);
 
 CK_RV card_detect(sc_reader_t *reader)
 {
-	struct sc_pkcs11_card *p11card = NULL;
 	int rc;
 	CK_RV rv;
-	unsigned int i;
-	int j;
+	int driver_idx = 0;
+	sc_reader_t *old_reader;
+	sc_reader_t *new_reader = NULL;
 
-	sc_log(context, "%s: Detecting smart card", reader->name);
+	sc_log(context, "%s: Detecting smart card card_driver_index:%d", reader->name, reader->card_driver_index);
 	/* Check if someone inserted a card */
 again:
 	rc = sc_detect_card_presence(reader);
@@ -256,6 +262,70 @@ again:
 		goto again;
 	}
 
+	/* EXPERIMENTAL
+	 * if its a Yubikey4 we want both PIV-II and OpenPGP loaded.
+	 * this is a proof of concept mod
+	 */
+	/* if already connected to a card driver, just do this reader */
+	if (reader->card_driver_index  >= 0) {
+		driver_idx = reader->card_driver_index;
+		/* setup pkcs11 for this reader only */
+		rv = card_detect_driver(reader, &driver_idx);
+		return rv;
+	}
+
+	/* No card driver found yet, see if we can find it and card drivers for other applets */
+	rv = card_detect_driver(reader, &driver_idx);
+	if (rv == 0) {
+		reader->card_driver_index = driver_idx;
+	}
+
+	/* A forced driver means only one card driver */
+	if (rv == 0 && context->forced_driver == NULL) {
+
+		/* now find if there are more applets/card drivers */
+		if (reader->ops->clone_reader) {
+			old_reader = reader;
+			rv = 0;
+			while (rv == CKR_OK) {
+				/* we need to get another reader so we can test for another applet */
+				/* use reader as pattern for it. */
+				rv = reader->ops->clone_reader(old_reader->ctx, old_reader, &new_reader);
+				if (rv != 0){
+					goto err;
+				}
+				driver_idx++; /* start with next driver */
+				rv = card_detect_driver(new_reader, &driver_idx);
+				if (rv == 0) {	/* found a new card driver */
+					new_reader->card_driver_index = driver_idx;
+					old_reader = new_reader;
+					new_reader = NULL;
+				}
+			}
+			if (rv == CKR_TOKEN_NOT_RECOGNIZED) {
+				rv = CKR_OK;
+			}
+		}
+	}
+
+err:
+	if (new_reader)
+		_sc_delete_reader(reader->ctx, new_reader);
+	return rv;
+
+}
+
+
+static CK_RV card_detect_driver(sc_reader_t *reader, int *driver_idx)
+{
+	struct sc_pkcs11_card *p11card = NULL;
+	int rc;
+	CK_RV rv;
+	unsigned int i;
+	int j;
+
+	sc_log(context, "%s: card_detect_driver  card_driver_index:%d", reader->name, reader->card_driver_index);
+
 	/* Locate a slot related to the reader */
 	for (i=0; i<list_size(&virtual_slots); i++) {
 		sc_pkcs11_slot_t *slot = (sc_pkcs11_slot_t *) list_get_at(&virtual_slots, i);
@@ -275,8 +345,11 @@ again:
 	}
 
 	if (p11card->card == NULL) {
-		sc_log(context, "%s: Connecting ... ", reader->name);
-		rc = sc_connect_card(reader, &p11card->card);
+		sc_log(context, "%s: Connecting ...  Driver_idx: %d", reader->name, driver_idx ? *driver_idx : 0);
+
+
+		rc = sc_connect_card_ext(reader, &p11card->card, driver_idx);
+
 		if (rc != SC_SUCCESS)   {
 			sc_log(context, "%s: SC connect card error %i", reader->name, rc);
 			return sc_to_cryptoki_error(rc, NULL);
