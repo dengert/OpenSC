@@ -71,6 +71,17 @@
 
 #include "cardmod.h"
 
+#define MD_FUNC_CALLED(pCardData, level) do { \
+         logprintf(pCardData, level, "Function %s:%d called\n",__func__, __LINE__); \
+} while(0)
+
+#define MD_FUNC_RETURN(pCardData, level, ...) do { \
+        DWORD _ret = __VA_ARGS__; \
+        logprintf(pCardData, level,\
+                "Function %s:%d returning with: %d\n", __func__, __LINE__, _ret); \
+        return _ret; \
+} while(0)
+
 /* store the instance given at DllMain when attached to access internal resources */
 HINSTANCE g_inst;
 
@@ -378,17 +389,19 @@ static DWORD check_card_status(PCARD_DATA pCardData, const char *name)
 {
 	VENDOR_SPECIFIC *vs;
 
+	MD_FUNC_CALLED(pCardData, 3);
+
 	if (!pCardData)
-		return SCARD_E_INVALID_PARAMETER;
+		MD_FUNC_RETURN(pCardData, 3, SCARD_E_INVALID_PARAMETER);
 
 	vs = (VENDOR_SPECIFIC *)(pCardData->pvVendorSpecific);
 	if (!vs)
-		return SCARD_E_INVALID_PARAMETER;
+		MD_FUNC_RETURN(pCardData, 3, SCARD_E_INVALID_PARAMETER);
 
 	if (vs->initialized)
-		return SCARD_S_SUCCESS;
+		MD_FUNC_RETURN(pCardData, 3, SCARD_S_SUCCESS);
 
-	return reinit_card_for(pCardData, name);
+	MD_FUNC_RETURN(pCardData, 3, reinit_card_for(pCardData, name));
 }
 
 /*
@@ -403,27 +416,35 @@ check_card_reader_status(PCARD_DATA pCardData, const char *name)
 	DWORD dwRet;
 	int r;
 
-	logprintf(pCardData, 4, "check_reader_status\n");
+	logprintf(pCardData, 1, "check_reader_status for %s\n, name");
 	if(!pCardData)
 		return SCARD_E_INVALID_PARAMETER;
 
 	dwRet = check_card_status(pCardData, name);
 	if (dwRet != SCARD_S_SUCCESS)
-		return dwRet;
+		MD_FUNC_RETURN(pCardData, 3, dwRet);
 
 	vs = (VENDOR_SPECIFIC*)(pCardData->pvVendorSpecific);
 	if(!vs)
-		return SCARD_E_INVALID_PARAMETER;
+		MD_FUNC_RETURN(pCardData, 3, SCARD_E_INVALID_PARAMETER);
 
-	logprintf(pCardData, 7, "pCardData->hSCardCtx:0x%08X hScard:0x%08X\n",
-		  (unsigned int)pCardData->hSCardCtx,
-		  (unsigned int)pCardData->hScard);
+	logprintf(pCardData, 7, "sizeof(size_t):%d sizeof(ULONG_PTR):%d sizeof(__int3264):%d sizeof pCardData->hSCardCtx:%d\n",
+		sizeof(size_t), sizeof(ULONG_PTR), sizeof(__int3264), sizeof pCardData->hSCardCtx);
+
+	logprintf(pCardData, 1, "pCardData->hSCardCtx:0x%08"SC_FORMAT_LEN_SIZE_T"X hScard:0x%08"SC_FORMAT_LEN_SIZE_T"X\n",
+		(size_t)pCardData->hSCardCtx,
+		(size_t)pCardData->hScard);
 
 	if (pCardData->hSCardCtx != vs->hSCardCtx || pCardData->hScard != vs->hScard) {
-		logprintf(pCardData, 1, "HANDLES CHANGED from 0x%08X 0x%08X\n",
-			  (unsigned int)vs->hSCardCtx,
-			  (unsigned int)vs->hScard);
-		return reinit_card_for(pCardData, name);
+		logprintf(pCardData, 1, "HANDLES CHANGED from  vs->hSCardCtx:0x%08"SC_FORMAT_LEN_SIZE_T"X vs->hScard:0x%08"SC_FORMAT_LEN_SIZE_T"X\n",
+			(size_t)vs->hSCardCtx,
+			(size_t)vs->hScard);
+		if (vs->ctx) {
+			vs->hScard = pCardData->hScard;
+			vs->hSCardCtx = pCardData->hSCardCtx;
+			r = sc_ctx_use_reader(vs->ctx, &vs->hSCardCtx, &vs->hScard);
+		}
+			MD_FUNC_RETURN(pCardData, 1, reinit_card_for(pCardData, name));
 	}
 
 	/* This should always work, as BaseCSP should be checking for removal too */
@@ -445,7 +466,7 @@ check_card_reader_status(PCARD_DATA pCardData, const char *name)
 		return reinit_card_for(pCardData, name);
 	}
 
-	return SCARD_S_SUCCESS;
+	MD_FUNC_RETURN(pCardData, 1, SCARD_S_SUCCESS);
 }
 
 static DWORD
@@ -6698,51 +6719,55 @@ DWORD WINAPI CardAcquireContext(__inout PCARD_DATA pCardData, __in DWORD dwFlags
 	CRITICAL_SECTION hScard_lock;
 
 	if (!pCardData)
-		return SCARD_E_INVALID_PARAMETER;
+		MD_FUNC_RETURN(pCardData, 1, SCARD_E_INVALID_PARAMETER);
+
+	MD_FUNC_CALLED(pCardData, 1);
+
 	if (dwFlags & ~CARD_SECURE_KEY_INJECTION_NO_CARD_MODE)
-		return SCARD_E_INVALID_PARAMETER;
+		MD_FUNC_RETURN(pCardData, 1, SCARD_E_INVALID_PARAMETER);
+
 	if (!(dwFlags & CARD_SECURE_KEY_INJECTION_NO_CARD_MODE)) {
 		if( pCardData->hSCardCtx == 0)   {
 			logprintf(pCardData, 0, "Invalid handle.\n");
-			return SCARD_E_INVALID_HANDLE;
+			MD_FUNC_RETURN(pCardData, 1, SCARD_E_INVALID_HANDLE);
 		}
 		if( pCardData->hScard == 0)   {
 			logprintf(pCardData, 0, "Invalid handle.\n");
-			return SCARD_E_INVALID_HANDLE;
+			MD_FUNC_RETURN(pCardData, 1, SCARD_E_INVALID_HANDLE);
 		}
 	}
 	else
 	{
 		/* secure key injection not supported */
-		return SCARD_E_UNSUPPORTED_FEATURE;
+		MD_FUNC_RETURN(pCardData, 1, SCARD_E_UNSUPPORTED_FEATURE);
 	}
 
 	if (pCardData->pbAtr == NULL)
-		return SCARD_E_INVALID_PARAMETER;
+		MD_FUNC_RETURN(pCardData, 1, SCARD_E_INVALID_PARAMETER);
 	if ( pCardData->pwszCardName == NULL )
-		return SCARD_E_INVALID_PARAMETER;
+		MD_FUNC_RETURN(pCardData, 1, SCARD_E_INVALID_PARAMETER);
 	/* <2 length or >=0x22 are not ISO compliant */
 	if (pCardData->cbAtr >= 0x22 || pCardData->cbAtr <= 0x2)
-		return SCARD_E_INVALID_PARAMETER;
+		MD_FUNC_RETURN(pCardData, 1, SCARD_E_INVALID_PARAMETER);
 	/* ATR beginning by 0x00 or 0xFF are not ISO compliant */
 	if (pCardData->pbAtr[0] == 0xFF || pCardData->pbAtr[0] == 0x00)
-		return SCARD_E_UNKNOWN_CARD;
+		MD_FUNC_RETURN(pCardData, 1, SCARD_E_UNKNOWN_CARD);
 	/* Memory management functions */
 	if ( ( pCardData->pfnCspAlloc   == NULL ) ||
 		( pCardData->pfnCspReAlloc == NULL ) ||
 		( pCardData->pfnCspFree    == NULL ) )
-		return SCARD_E_INVALID_PARAMETER;
+		MD_FUNC_RETURN(pCardData, 1, SCARD_E_INVALID_PARAMETER);
 
 	/* The lowest supported version is 4 - maximum is 7. */
 	if (pCardData->dwVersion < MD_MINIMUM_VERSION_SUPPORTED)
-		return (DWORD) ERROR_REVISION_MISMATCH;
+		MD_FUNC_RETURN(pCardData, 1, (DWORD) ERROR_REVISION_MISMATCH);
 
 	suppliedVersion = pCardData->dwVersion;
 
 	/* VENDOR SPECIFIC */
 	vs = pCardData->pvVendorSpecific = pCardData->pfnCspAlloc(sizeof(VENDOR_SPECIFIC));
 	if (!vs)
-		return SCARD_E_NO_MEMORY;
+		MD_FUNC_RETURN(pCardData, 1, SCARD_E_NO_MEMORY);
 	memset(vs, 0, sizeof(VENDOR_SPECIFIC));
 
 	InitializeCriticalSection(&vs->hScard_lock);
@@ -6844,7 +6869,7 @@ DWORD WINAPI CardAcquireContext(__inout PCARD_DATA pCardData, __in DWORD dwFlags
 
 	unlock(pCardData);
 
-	return SCARD_S_SUCCESS;
+	MD_FUNC_RETURN(pCardData, 1, SCARD_S_SUCCESS);
 
 ret_disassoc:
 	disassociate_card(pCardData);
@@ -6858,7 +6883,7 @@ ret_free:
 	pCardData->pvVendorSpecific = NULL;
 	LeaveCriticalSection(&hScard_lock);
 	DeleteCriticalSection(&hScard_lock);
-	return dwret;
+	MD_FUNC_RETURN(pCardData, 1, dwret);
 }
 
 static DWORD associate_card(PCARD_DATA pCardData)
