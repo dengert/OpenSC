@@ -1,3 +1,37 @@
+!IF "$(PLATFORM)" == "x86"
+OPENSSL_DEF = /DENABLE_OPENSSL
+OPENSSL_EXTRA_CFLAGS=/DOPENSSL_SECURE_MALLOC_SIZE=65536
+OPENSSL_DIR=OPENSSL-Win32
+
+#OPENPACE_DEF=/DENABLE_OPENPACE
+#OPENPACE_DIR=C:\openpace_win32-vs12
+#OPENPACE_INCL_DIR=/IC:\openpace_win32-vs12\include
+#OPENPACE_LIB=C:\openpace_win32-vs12\lib\libeacMT.lib
+
+ZLIB_DEF = /DENABLE_ZLIB
+ZLIBSTATIC_DEF = /DENABLE_ZLIB_STATIC
+ZLIB_DIR = C:\zlib-Win32
+ZLIB_INCL_DIR = /IC:\zlib-Win32
+ZLIB_LIB = C:\zlib-Win32\zlib.lib
+ZLIB_DIR = C:\zlib-Win32
+!ELSE
+OPENSSL_DEF = /DENABLE_OPENSSL
+OPENSSL_EXTRA_CFLAGS=/DOPENSSL_SECURE_MALLOC_SIZE=65536
+OPENSSL_DIR=OPENSSL-Win64
+
+#OPENPACE_DEF=/DENABLE_OPENPACE
+#OPENPACE_DIR=C:\openpace_win64-vs12
+#OPENPACE_INCL_DIR=/IC:\openpace_win64-vs12\include
+#OPENPACE_LIB=C:\openpace_win64-vs12\lib\libeacMT.lib
+
+ZLIB_DEF = /DENABLE_ZLIB
+ZLIBSTATIC_DEF = /DENABLE_ZLIB_STATIC
+ZLIB_DIR = C:\zlib-Win64
+ZLIB_INCL_DIR = /IC:\zlib-Win64
+ZLIB_LIB = C:\zlib-Win64\zlib.lib
+ZLIB_DIR = C:\zlib-Win64
+!ENDIF
+
 OPENSC_FEATURES = pcsc
 
 #Include support for minidriver
@@ -49,26 +83,26 @@ OPENSSL_STATIC_DIR = static
 !IF "$(DEBUG_DEF)" == "/DDEBUG"
 !IF "$(PLATFORM)" == "x86"
 # OpenSSL 1.0.2
-OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libeay32MTd.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
+#OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libeay32MTd.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
 # OpenSSL 1.1.0
-#OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libcrypto32MTd.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
+OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libcrypto32MTd.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
 !ELSE
 # OpenSSL 1.0.2
-OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libeay32MTd.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
+#OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libeay32MTd.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
 # OpenSSL 1.1.0
-#OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libcrypto64MTd.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
+OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libcrypto64MTd.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
 !ENDIF
 !ELSE
 !IF "$(PLATFORM)" == "x86"
 # OpenSSL 1.0.2
-OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libeay32MT.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
+#OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libeay32MT.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
 # OpenSSL 1.1.0
-#OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libcrypto32MT.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
+OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libcrypto32MT.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
 !ELSE
 # OpenSSL 1.0.2
-OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libeay32MT.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
+#OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libeay32MT.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
 # OpenSSL 1.1.0
-#OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libcrypto64MT.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
+OPENSSL_LIB = $(OPENSSL_DIR)\lib\VC\$(OPENSSL_STATIC_DIR)\libcrypto64MT.lib user32.lib advapi32.lib crypt32.lib ws2_32.lib
 !ENDIF
 !ENDIF
 
@@ -88,10 +122,10 @@ CANDLEFLAGS = -dOpenSSL="$(OPENSSL_DIR)" $(CANDLEFLAGS)
 !IF "$(ZLIBSTATIC_DEF)" == "/DENABLE_ZLIB_STATIC"
 ZLIB_DEF = /DENABLE_ZLIB
 !IF "$(ZLIB_INCL_DIR)" == ""
-ZLIB_INCL_DIR = /IC:\zlib
+ZLIB_INCL_DIR = /I$(ZLIB_DIR)
 !ENDIF
 !IF "$(ZLIB_LIB)" == ""
-ZLIB_LIB = C:\zlib\zlib.lib
+ZLIB_LIB = $(ZLIB_DIR)\zlib.lib
 !ENDIF
 OPENSC_FEATURES = $(OPENSC_FEATURES) zlib
 !ELSEIF "$(ZLIB_DEF)" == "/DENABLE_ZLIB"
@@ -102,7 +136,7 @@ ZLIB_INCL_DIR = /IC:\zlib-dll\include
 ZLIB_LIB = C:\zlib-dll\lib\zdll.lib
 !ENDIF
 OPENSC_FEATURES = $(OPENSC_FEATURES) zlib
-CANDLEFLAGS = -dzlib="C:\zlib-dll" $(CANDLEFLAGS)
+CANDLEFLAGS = -dzlib="$(ZLIB_DIR)" $(CANDLEFLAGS)
 !ENDIF
 
 
@@ -116,8 +150,12 @@ CANDLEFLAGS = -dzlib="C:\zlib-dll" $(CANDLEFLAGS)
 !IF "$(OPENPACE_DIR)" == ""
 OPENPACE_DIR = C:\openpace
 !ENDIF
+!IF "$(OPENPACE_INCL_DIR)" == ""
 OPENPACE_INCL_DIR = /I$(OPENPACE_DIR)\src
+!ENDIF
+!IF "$(OPENPACE_LIB)" == ""
 OPENPACE_LIB = $(OPENPACE_DIR)\src\libeac.lib
+!ENDIF
 CANDLEFLAGS = -dOpenPACE="$(OPENPACE_DIR)" $(CANDLEFLAGS)
 !ENDIF
 
@@ -148,7 +186,7 @@ COPTS =  /GS /W3 /WX /D_CRT_SECURE_NO_DEPRECATE /D_CRT_NONSTDC_NO_WARNINGS /MT /
 
 
 LINKFLAGS = /NOLOGO /INCREMENTAL:NO /MACHINE:$(PLATFORM) /NODEFAULTLIB:MSVCRTD  /NODEFAULTLIB:MSVCRT /NXCOMPAT /DYNAMICBASE $(LINKDEBUGFLAGS)
-LIBFLAGS =  /nologo /machine:$(PLATFORM)
+LIBFLAGS =  /nologo /MACHINE:$(PLATFORM)
 !IF "$(PLATFORM)" == "x86"
 CANDLEFLAGS = -dPlatform=x86 $(CANDLEFLAGS)
 !ELSE

@@ -20,6 +20,7 @@ SUBDIRS = $(SUBDIRS) tests
 !ENDIF
 
 all::
+	-del getopt.h    #looks like symlink do real copy
 	copy /y common\compat_getopt.h getopt.h
 	@for %i in ( $(SUBDIRS) ) do \
 		@cmd /c "cd %i && $(MAKE) /nologo /f Makefile.mak $@"
