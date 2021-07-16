@@ -2187,14 +2187,14 @@ static int piv_sm_open(struct sc_card *card)
 	p = rbuf;
 	
 	body = sc_asn1_find_tag(card->ctx, rbuf, rbuflen, 0x7C, &bodylen);
-	if (body == NULL || bodylen < 20) {
+	if (body == NULL || bodylen < 20 || rbuf[0] != 0x7C) {
 		sc_log(card->ctx, "SM responce data to short");
 		r = SC_ERROR_SM_NO_SESSION_KEYS;
 		goto err;
 	}
 
 	payload = sc_asn1_find_tag(card->ctx, body, bodylen, 0x82, &payloadlen);
-	if (payload == NULL || payloadlen < 1 + cs->Nicclen + cs->AuthCryptogramlen) {
+	if (payload == NULL || payloadlen < 1 + cs->Nicclen + cs->AuthCryptogramlen || *body != 0x82) {
 		sc_log(card->ctx, "SM responce data to short");
 		r = SC_ERROR_SM_NO_SESSION_KEYS;
 		goto err;
@@ -2254,7 +2254,9 @@ static int piv_sm_open(struct sc_card *card)
 		const u8* tmpder;
 		size_t tmpderlen;
 
-		if ((tag = sc_asn1_find_tag(card->ctx,cvcder,cvclen, 0x7F21, &taglen))  == NULL){
+		if ((tag = sc_asn1_find_tag(card->ctx, cvcder, cvclen, 0x7F21, &taglen)) == NULL
+				|| *cvcder != 0x7F || *(cvcder + 1) != 0x21) {
+
 			r = SC_ERROR_INTERNAL;
 			goto err;
 		}
@@ -3703,7 +3705,7 @@ static int piv_general_mutual_authenticate(sc_card_t *card,
 	/* Get the witness data indicated by the TAG 0x80 */
 	witness_data = sc_asn1_find_tag(card->ctx, body,
 		body_len, 0x80, &witness_len);
-	if (!witness_len) {
+	if (!witness_len || body[0] != 0x80) {
 		sc_debug(card->ctx, SC_LOG_DEBUG_VERBOSE, "Invalid Challenge Data none found in TLV\n");
 		r =  SC_ERROR_INVALID_DATA;
 		goto err;
