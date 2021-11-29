@@ -39,7 +39,6 @@ export DEBIAN_FRONTEND=noninteractive
 export DEBCONF_NONINTERACTIVE_SEEN=true
 sudo apt-get update
 sudo apt-get check
-dpkg -l | grep ^..r
 sudo apt-cache search libwine
 apt-cache policy libwine
 sudo apt install --install-recommends winehq-stable
