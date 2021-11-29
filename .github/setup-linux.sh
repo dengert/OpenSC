@@ -36,6 +36,7 @@ elif [ "$1" == "mingw" -o "$1" == "mingw32" ]; then
 	if [ "$1" == "mingw" ]; then
 		DEPS="$DEPS binutils-mingw-w64-x86-64 gcc-mingw-w64-x86-64 mingw-w64"
 	elif [ "$1" == "mingw32" ]; then
+
 		DEPS="$DEPS binutils-mingw-w64-i686 gcc-mingw-w64-i686"
 	fi
 fi
@@ -45,12 +46,10 @@ export DEBIAN_FRONTEND=noninteractive
 export DEBCONF_NONINTERACTIVE_SEEN=true
 sudo apt-get update
 sudo apt-get check
-sudo apt-cache search libwine
-apt-cache policy libwine
-sudo apt install --install-recommends winehq-stable
 sudo apt-get install -o Debug::pkgProblemResolver=yes -y build-essential $DEPS
 
 if [ "$1" == "mingw" -o "$1" == "mingw32" ]; then
+	 sudo apt install --install-recommends winehq-stable
 	if [ ! -f "$(winepath 'C:/Program Files/Inno Setup 5/ISCC.exe')" ]; then
 		/sbin/start-stop-daemon --start --quiet --pidfile /tmp/custom_xvfb_99.pid --make-pidfile --background --exec /usr/bin/Xvfb -- :99 -ac -screen 0 1280x1024x16
 		export DISPLAY=:99.0
