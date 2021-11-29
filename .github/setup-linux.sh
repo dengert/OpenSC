@@ -28,10 +28,10 @@ elif [ "$1" == "mingw" -o "$1" == "mingw32" ]; then
 #	https://wine.htmlvalidator.com/install-wine-on-ubuntu-20.04.html
 	dpkg --print-architecture
 	dpkg --print-foreign-architectures
-	DEPS="$DEPS wine wine xvfb wget"
+	DEPS="$DEPS wine xvfb wget"
 	sudo dpkg --add-architecture i386
 	if [ "$1" == "mingw" ]; then
-		DEPS="$DEPS binutil win32 wine mingw-w64-x86-64 gcc-mingw-w64-x86-64 mingw-w64"
+		DEPS="$DEPS wine64 binutil-mingw-w64-x86-64 gcc-mingw-w64-x86-64 mingw-w64"
 	elif [ "$1" == "mingw32" ]; then
 		DEPS="$DEPS wine32 binutils-mingw-w64-i686 gcc-mingw-w64-i686"
 	fi
@@ -42,7 +42,8 @@ export DEBIAN_FRONTEND=noninteractive
 export DEBCONF_NONINTERACTIVE_SEEN=true
 sudo apt-get update
 sudo apt-get check
-sudo apt-get install --fix-broken --fix-missing -o Debug::pkgProblemResolver=yes -y build-essential $DEPS
+sudo apt-get clean
+sudo apt-get install -y build-essential $DEPS
 
 if [ "$1" == "mingw" -o "$1" == "mingw32" ]; then
 
