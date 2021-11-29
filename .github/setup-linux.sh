@@ -28,7 +28,7 @@ elif [ "$1" == "mingw" -o "$1" == "mingw32" ]; then
 #	https://wine.htmlvalidator.com/install-wine-on-ubuntu-20.04.html
 	dpkg --print-architecture
 	dpkg --print-foreign-architectures
-	DEPS="$DEPS wine wine32 libwin xvfb wget"
+	DEPS="$DEPS wine wine32 xvfb wget"
 	sudo dpkg --add-architecture i386
 #	wget -nc https://dl.winehq.org/wine-builds/winehq.key
 #	sudo -H gpg -o /etc/apt/trusted.gpg.d/winehq.key.gpg --dearmor winehq.key
