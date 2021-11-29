@@ -25,8 +25,14 @@ elif [ "$1" == "piv" -o "$1" == "isoapplet" -o "$1" == "gidsapplet" -o "$1" == "
 	fi
 	DEPS="$DEPS ant openjdk-8-jdk maven"
 elif [ "$1" == "mingw" -o "$1" == "mingw32" ]; then
+#	https://wine.htmlvalidator.com/install-wine-on-ubuntu-20.04.html
+	dpkg --print-architecture
+	dpkg --print-foreign-architectures
 	DEPS="$DEPS wine wine32 xvfb wget"
 	sudo dpkg --add-architecture i386
+	wget -nc https://dl.winehq.org/wine-builds/winehq.key
+	sudo -H gpg -o /etc/apt/trusted.gpg.d/winehq.key.gpg --dearmor winehq.key
+	sudo add-apt-repository 'deb https://dl.winehq.org/wine-builds/ubuntu/ focal main'
 	if [ "$1" == "mingw" ]; then
 		DEPS="$DEPS binutils-mingw-w64-x86-64 gcc-mingw-w64-x86-64 mingw-w64"
 	elif [ "$1" == "mingw32" ]; then
@@ -41,6 +47,7 @@ sudo apt-get update
 sudo apt-get check
 sudo apt-cache search libwine
 apt-cache policy libwine
+sudo apt install --install-recommends winehq-stable
 sudo apt-get install -o Debug::pkgProblemResolver=yes -y build-essential $DEPS
 
 if [ "$1" == "mingw" -o "$1" == "mingw32" ]; then
