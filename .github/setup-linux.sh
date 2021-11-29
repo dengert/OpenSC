@@ -30,10 +30,6 @@ elif [ "$1" == "mingw" -o "$1" == "mingw32" ]; then
 	dpkg --print-foreign-architectures
 	DEPS="$DEPS xvfb wget"
 	sudo dpkg --add-architecture i386
-#	wget -O https://dl.winehq.org/wine-builds/winehq.key sudp apt-key add
-#	wget -nc https://dl.winehq.org/wine-builds/winehq.key
-#	sudo -H gpg -o /etc/apt/trusted.gpg.d/winehq.key.gpg --dearmor winehq.key
-	sudo add-apt-repository 'deb https://dl.winehq.org/wine-builds/ubuntu/ focal main'
 	if [ "$1" == "mingw" ]; then
 		DEPS="$DEPS binutils-mingw-w64-x86-64 gcc-mingw-w64-x86-64 mingw-w64"
 	elif [ "$1" == "mingw32" ]; then
@@ -53,10 +49,11 @@ if [ "$1" == "mingw" -o "$1" == "mingw32" ]; then
 
 	wget -nc https://dl.winehq.org/wine-builds/winehq.key
 	sudo -H gpg -o /etc/apt/trusted.gpg.d/winehq.key.gpg --dearmor winehq.key
+	sudo apt-key list
 
 	sudo add-apt-repository 'deb https://dl.winehq.org/wine-builds/ubuntu/ focal main'
 	sudo apt update
-	sudo apt install --install-recommends winehq-stable
+	sudo apt install --install-recommends wine-stable
 
 	if [ ! -f "$(winepath 'C:/Program Files/Inno Setup 5/ISCC.exe')" ]; then
 		/sbin/start-stop-daemon --start --quiet --pidfile /tmp/custom_xvfb_99.pid --make-pidfile --background --exec /usr/bin/Xvfb -- :99 -ac -screen 0 1280x1024x16
