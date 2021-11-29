@@ -38,7 +38,12 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 export DEBCONF_NONINTERACTIVE_SEEN=true
 sudo apt-get update
-sudo apt-get install -y build-essential $DEPS
+sudo apt-get check
+sudo dpkg -l | grep ^..r
+sudo apt-cache search libwine
+apt-cache policy libwine
+sudo apt install --install-recommends winehq-stable
+sudo apt-get install -o Debug::pkgProblemResolver=yes -y build-essential $DEPS
 
 if [ "$1" == "mingw" -o "$1" == "mingw32" ]; then
 	if [ ! -f "$(winepath 'C:/Program Files/Inno Setup 5/ISCC.exe')" ]; then
