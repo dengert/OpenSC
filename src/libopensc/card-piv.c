@@ -159,7 +159,7 @@ enum {
 
 typedef struct piv_private_data {
 	int enumtag;
-	int  selected_obj; /* The index into the piv_objects last selected */
+	int  selected_obj; /* The index into the piv_objects last selected -1 not found -2 doing iso7816 r/w binary */
 	int  return_only_cert; /* return the cert from the object */
 	int  rwb_state; /* first time -1, 0, in middle, 1 at eof */
 	int operation; /* saved from set_security_env */
@@ -1158,8 +1158,16 @@ piv_read_binary(sc_card_t *card, unsigned int idx, unsigned char *buf, size_t co
 	size_t bodylen;
 
 	SC_FUNC_CALLED(card->ctx, SC_LOG_DEBUG_VERBOSE);
-	if (priv->selected_obj < 0)
-		 LOG_FUNC_RETURN(card->ctx, SC_ERROR_INTERNAL);
+	if (priv->selected_obj < 0) {
+		/* if not emulating read/write binary */
+		if (priv->selected_obj == -2) {
+			struct sc_card_driver *iso_drv = sc_get_iso7816_driver();
+			r = iso_drv->ops->read_binary(card, idx,  buf, count, flags);
+			LOG_FUNC_RETURN(card->ctx, r);
+		}
+		LOG_FUNC_RETURN(card->ctx, SC_ERROR_INTERNAL);
+	}
+
 	enumtag = piv_objects[priv->selected_obj].enumtag;
 
 	if (priv->rwb_state == -1) {
@@ -1343,8 +1351,16 @@ static int piv_write_binary(sc_card_t *card, unsigned int idx,
 
 	LOG_FUNC_CALLED(card->ctx);
 
-	if (priv->selected_obj < 0)
+	if (priv->selected_obj < 0) {
+		/* if not emulating read/write binary */
+
+		if (priv->selected_obj == -2) {
+			struct sc_card_driver *iso_drv = sc_get_iso7816_driver();
+			r = iso_drv->ops->write_binary(card, idx,  buf, count, flags);
+			LOG_FUNC_RETURN(card->ctx, r);
+		}
 		LOG_FUNC_RETURN(card->ctx, SC_ERROR_INTERNAL);
+	}
 
 	enumtag = piv_objects[priv->selected_obj].enumtag;
 
@@ -2524,8 +2540,13 @@ static int piv_select_file(sc_card_t *card, const sc_path_t *in_path,
 
 	i = piv_find_obj_by_containerid(card, path);
 
-	if (i < 0)
-		LOG_FUNC_RETURN(card->ctx, SC_ERROR_FILE_NOT_FOUND);
+	if (i < 0) {
+		struct sc_card_driver *iso_drv = sc_get_iso7816_driver();
+		priv->selected_obj = -2;
+		priv->rwb_state = -1;
+		r = iso_drv->ops->select_file(card, in_path, file_out);
+			LOG_FUNC_RETURN(card->ctx, r);
+	}
 
 	/*
 	 * pkcs15 will use a 2 byte path or a 4 byte path
