@@ -231,6 +231,44 @@ static void * dup_mem(void *in, size_t in_len)
 	return out;
 }
 
+static EVP_MD *ossl_md(const char *algorithm)
+{
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+    return (EVP_MD *)EVP_get_digestbyname(algorithm);
+#else
+    return EVP_MD_fetch(context->osslctx, algorithm, NULL);
+#endif
+}
+
+static CK_RV ossl_md_copy(const void *src, void **dst)
+{
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    int ret = EVP_MD_up_ref((EVP_MD *)src);
+    if (ret != 1) {
+        return CKR_GENERAL_ERROR;
+    }
+#endif
+    *dst = (EVP_MD *)src;
+    return CKR_OK;
+}
+
+static void ossl_md_free(const void *md)
+{
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    EVP_MD_free((EVP_MD *)md);
+#endif
+    return;
+}
+
+static EVP_PKEY_CTX *ossl_pkey_ctx_new(EVP_PKEY *pkey)
+{
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+    return EVP_PKEY_CTX_new(pkey, NULL);
+#else
+    return EVP_PKEY_CTX_new_from_pkey(context->osslctx, pkey, NULL);
+#endif
+}
+
 void
 sc_pkcs11_register_openssl_mechanisms(struct sc_pkcs11_card *p11card)
 {
@@ -287,38 +325,52 @@ sc_pkcs11_register_openssl_mechanisms(struct sc_pkcs11_card *p11card)
 #endif /* !defined(OPENSSL_NO_ENGINE) */
 #endif /* OPENSSL_VERSION_NUMBER < 0x30000000L */
 
-	openssl_sha1_mech.mech_data = EVP_sha1();
+	openssl_sha1_mech.mech_data = ossl_md("sha1");
+	openssl_sha1_mech.free_mech_data = ossl_md_free;
+	openssl_sha1_mech.copy_mech_data = ossl_md_copy;
 	mt = dup_mem(&openssl_sha1_mech, sizeof openssl_sha1_mech);
 	sc_pkcs11_register_mechanism(p11card, mt, NULL);
 	sc_pkcs11_free_mechanism(&mt);
 
-	openssl_sha224_mech.mech_data = EVP_sha224();
+	openssl_sha224_mech.mech_data = ossl_md("sha224");
+	openssl_sha224_mech.free_mech_data = ossl_md_free;
+	openssl_sha224_mech.copy_mech_data = ossl_md_copy;
 	mt = dup_mem(&openssl_sha224_mech, sizeof openssl_sha224_mech);
 	sc_pkcs11_register_mechanism(p11card, mt, NULL);
 	sc_pkcs11_free_mechanism(&mt);
 
-	openssl_sha256_mech.mech_data = EVP_sha256();
+	openssl_sha256_mech.mech_data = ossl_md("sha256");
+	openssl_sha256_mech.free_mech_data = ossl_md_free;
+	openssl_sha256_mech.copy_mech_data = ossl_md_copy;
 	mt = dup_mem(&openssl_sha256_mech, sizeof openssl_sha256_mech);
 	sc_pkcs11_register_mechanism(p11card, mt, NULL);
 	sc_pkcs11_free_mechanism(&mt);
 
-	openssl_sha384_mech.mech_data = EVP_sha384();
+	openssl_sha384_mech.mech_data = ossl_md("sha384");
+	openssl_sha384_mech.free_mech_data = ossl_md_free;
+	openssl_sha384_mech.copy_mech_data = ossl_md_copy;
 	mt = dup_mem(&openssl_sha384_mech, sizeof openssl_sha384_mech);
 	sc_pkcs11_register_mechanism(p11card, mt, NULL);
 	sc_pkcs11_free_mechanism(&mt);
 
-	openssl_sha512_mech.mech_data = EVP_sha512();
+	openssl_sha512_mech.mech_data = ossl_md("sha512");
+	openssl_sha512_mech.free_mech_data = ossl_md_free;
+	openssl_sha512_mech.copy_mech_data = ossl_md_copy;
 	mt = dup_mem(&openssl_sha512_mech, sizeof openssl_sha512_mech);
 	sc_pkcs11_register_mechanism(p11card, mt, NULL);
 	sc_pkcs11_free_mechanism(&mt);
 
 	if (!FIPS_mode()) {
-		openssl_md5_mech.mech_data = EVP_md5();
+		openssl_md5_mech.mech_data = ossl_md("md5");
+	        openssl_md5_mech.free_mech_data = ossl_md_free;
+	        openssl_md5_mech.copy_mech_data = ossl_md_copy;
 		mt = dup_mem(&openssl_md5_mech, sizeof openssl_md5_mech);
 		sc_pkcs11_register_mechanism(p11card, mt, NULL);
 		sc_pkcs11_free_mechanism(&mt);
 
-		openssl_ripemd160_mech.mech_data = EVP_ripemd160();
+		openssl_ripemd160_mech.mech_data = ossl_md("ripemd160");
+	        openssl_ripemd160_mech.free_mech_data = ossl_md_free;
+	        openssl_ripemd160_mech.copy_mech_data = ossl_md_copy;
 		mt = dup_mem(&openssl_ripemd160_mech, sizeof openssl_ripemd160_mech);
 		sc_pkcs11_register_mechanism(p11card, mt, NULL);
 		sc_pkcs11_free_mechanism(&mt);
@@ -654,22 +706,22 @@ CK_RV sc_pkcs11_verify_data(const unsigned char *pubkey, unsigned int pubkey_len
 		    || mech->mechanism == CKM_ECDSA_SHA384
 		    || mech->mechanism == CKM_ECDSA_SHA512) {
 			EVP_MD_CTX *mdctx;
-			const EVP_MD *md;
+			EVP_MD *md = NULL;
 			switch (mech->mechanism) {
 				case CKM_ECDSA_SHA1:
-					md = EVP_sha1();
+					md = ossl_md("sha1");
 					break;
 				case CKM_ECDSA_SHA224:
-					md = EVP_sha224();
+					md = ossl_md("sha224");
 					break;
 				case CKM_ECDSA_SHA256:
-					md = EVP_sha256();
+					md = ossl_md("sha256");
 					break;
 				case CKM_ECDSA_SHA384:
-					md = EVP_sha384();
+					md = ossl_md("sha384");
 					break;
 				case CKM_ECDSA_SHA512:
-					md = EVP_sha512();
+					md = ossl_md("sha512");
 					break;
 				default:
 					EVP_PKEY_free(pkey);
@@ -679,11 +731,13 @@ CK_RV sc_pkcs11_verify_data(const unsigned char *pubkey, unsigned int pubkey_len
 			mdbuf = calloc(1, mdbuf_len);
 			if (mdbuf == NULL) {
 				EVP_PKEY_free(pkey);
+                                ossl_md_free(md);
 				return CKR_DEVICE_MEMORY;
 			}
 			if ((mdctx = EVP_MD_CTX_new()) == NULL) {
 				free(mdbuf);
 				EVP_PKEY_free(pkey);
+                                ossl_md_free(md);
 				return CKR_GENERAL_ERROR;
 			}
 			if (!EVP_DigestInit(mdctx, md)
@@ -691,10 +745,12 @@ CK_RV sc_pkcs11_verify_data(const unsigned char *pubkey, unsigned int pubkey_len
 				|| !EVP_DigestFinal(mdctx, mdbuf, &mdbuf_len)) {
 				EVP_PKEY_free(pkey);
 				EVP_MD_CTX_free(mdctx);
+                                ossl_md_free(md);
 				free(mdbuf);
 				return CKR_GENERAL_ERROR;
 			}
 			EVP_MD_CTX_free(mdctx);
+                        ossl_md_free(md);
 			data = mdbuf;
 			data_len = mdbuf_len;
 		}
@@ -702,7 +758,7 @@ CK_RV sc_pkcs11_verify_data(const unsigned char *pubkey, unsigned int pubkey_len
 		res = 0;
 		r = sc_asn1_sig_value_rs_to_sequence(NULL, signat, signat_len,
 						     &signat_tmp, &signat_len_tmp);
-		ctx = EVP_PKEY_CTX_new(pkey, NULL);
+		ctx = ossl_pkey_ctx_new(pkey);
 		if (r == 0 && EVP_PKEY_base_id(pkey) == EVP_PKEY_EC && ctx && EVP_PKEY_verify_init(ctx) == 1)
 			res = EVP_PKEY_verify(ctx, signat_tmp, signat_len_tmp, data, data_len);
 
@@ -721,7 +777,7 @@ CK_RV sc_pkcs11_verify_data(const unsigned char *pubkey, unsigned int pubkey_len
 	} else {
 		unsigned char *rsa_out = NULL, pad;
 		size_t rsa_outlen = 0;
-		EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(pkey, NULL);
+		EVP_PKEY_CTX *ctx = ossl_pkey_ctx_new(pkey);
 		if (!ctx) {
 			EVP_PKEY_free(pkey);
 			return CKR_DEVICE_MEMORY;
@@ -783,7 +839,7 @@ CK_RV sc_pkcs11_verify_data(const unsigned char *pubkey, unsigned int pubkey_len
 		    mech->mechanism == CKM_SHA384_RSA_PKCS_PSS ||
 		    mech->mechanism == CKM_SHA512_RSA_PKCS_PSS) {
 			CK_RSA_PKCS_PSS_PARAMS* param = NULL;
-			const EVP_MD *mgf_md, *pss_md;
+			EVP_MD *mgf_md = NULL, *pss_md = NULL;
 			unsigned char digest[EVP_MAX_MD_SIZE];
 
 			if (mech->pParameter == NULL) {
@@ -796,19 +852,19 @@ CK_RV sc_pkcs11_verify_data(const unsigned char *pubkey, unsigned int pubkey_len
 			param = (CK_RSA_PKCS_PSS_PARAMS*)mech->pParameter;
 			switch (param->mgf) {
 			case CKG_MGF1_SHA1:
-				mgf_md = EVP_sha1();
+				mgf_md = ossl_md("sha1");
 				break;
 			case CKG_MGF1_SHA224:
-				mgf_md = EVP_sha224();
+				mgf_md = ossl_md("sha224");
 				break;
 			case CKG_MGF1_SHA256:
-				mgf_md = EVP_sha256();
+				mgf_md = ossl_md("sha256");
 				break;
 			case CKG_MGF1_SHA384:
-				mgf_md = EVP_sha384();
+				mgf_md = ossl_md("sha384");
 				break;
 			case CKG_MGF1_SHA512:
-				mgf_md = EVP_sha512();
+				mgf_md = ossl_md("sha512");
 				break;
 			default:
 				free(rsa_out);
@@ -818,21 +874,22 @@ CK_RV sc_pkcs11_verify_data(const unsigned char *pubkey, unsigned int pubkey_len
 
 			switch (param->hashAlg) {
 			case CKM_SHA_1:
-				pss_md = EVP_sha1();
+				pss_md = ossl_md("sha1");
 				break;
 			case CKM_SHA224:
-				pss_md = EVP_sha224();
+				pss_md = ossl_md("sha224");
 				break;
 			case CKM_SHA256:
-				pss_md = EVP_sha256();
+				pss_md = ossl_md("sha256");
 				break;
 			case CKM_SHA384:
-				pss_md = EVP_sha384();
+				pss_md = ossl_md("sha384");
 				break;
 			case CKM_SHA512:
-				pss_md = EVP_sha512();
+				pss_md = ossl_md("sha512");
 				break;
 			default:
+                                ossl_md_free(mgf_md);
 				free(rsa_out);
 				EVP_PKEY_free(pkey);
 				return CKR_MECHANISM_PARAM_INVALID;
@@ -848,6 +905,8 @@ CK_RV sc_pkcs11_verify_data(const unsigned char *pubkey, unsigned int pubkey_len
 				unsigned int tmp_len;
 
 				if (!md_ctx || !EVP_DigestFinal(md_ctx, tmp, &tmp_len)) {
+                                        ossl_md_free(mgf_md);
+                                        ossl_md_free(pss_md);
 					free(rsa_out);
 					EVP_PKEY_free(pkey);
 					return CKR_GENERAL_ERROR;
@@ -865,13 +924,15 @@ CK_RV sc_pkcs11_verify_data(const unsigned char *pubkey, unsigned int pubkey_len
 			else
 				sLen = param->sLen;
 
-			if ((ctx = EVP_PKEY_CTX_new(pkey, NULL)) == NULL ||
+			if ((ctx = ossl_pkey_ctx_new(pkey)) == NULL ||
 				EVP_PKEY_verify_init(ctx) != 1 ||
 				EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_PSS_PADDING) != 1 ||
 				EVP_PKEY_CTX_set_signature_md(ctx, pss_md) != 1 ||
 				EVP_PKEY_CTX_set_rsa_pss_saltlen(ctx, sLen) != 1 ||
 				EVP_PKEY_CTX_set_rsa_mgf1_md(ctx, mgf_md) != 1) {
 				sc_log(context, "Failed to initialize EVP_PKEY_CTX");
+                                ossl_md_free(mgf_md);
+                                ossl_md_free(pss_md);
 				free(rsa_out);
 				EVP_PKEY_free(pkey);
 				EVP_PKEY_CTX_free(ctx);
@@ -883,6 +944,8 @@ CK_RV sc_pkcs11_verify_data(const unsigned char *pubkey, unsigned int pubkey_len
 				rv = CKR_OK;
 			EVP_PKEY_free(pkey);
 			EVP_PKEY_CTX_free(ctx);
+                        ossl_md_free(mgf_md);
+                        ossl_md_free(pss_md);
 			free(rsa_out);
 			sc_log(context, "Returning %lu", rv);
 			return rv;
