@@ -1742,6 +1742,16 @@ iso7816_build_pin_apdu(struct sc_card *card, struct sc_apdu *apdu,
  */
 void sc_free(void *p);
 
+#ifdef ENABLE_OPENSSL
+#include <openssl/evp.h>
+EVP_MD *sc_evp_md(struct sc_context *context, const char *algorithm);
+void sc_evp_md_free(EVP_MD *md);
+EVP_PKEY_CTX *sc_evp_pkey_ctx_new(struct sc_context *context, EVP_PKEY *pkey);
+#else
+void *sc_evp_md(struct sc_context *context, const char *algorithm);
+void *sc_evp_pkey_ctx_new(struct sc_context *context, void *pkey);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

@@ -383,3 +383,6 @@ sc_notify_id
 sc_color_fprintf
 iso7816_update_binary_sfid
 sc_free
+sc_evp_md
+sc_evp_md_free
+sc_evp_pkey_ctx_new

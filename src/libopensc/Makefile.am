@@ -25,7 +25,7 @@ AM_CFLAGS = $(OPENPACE_CFLAGS) $(OPTIONAL_OPENSSL_CFLAGS) $(OPTIONAL_OPENCT_CFLA
 AM_OBJCFLAGS = $(AM_CFLAGS)
 
 libopensc_la_SOURCES_BASE = \
-	sc.c ctx.c log.c errors.c \
+	sc.c ctx.c log.c errors.c ossl.c \
 	asn1.c base64.c sec.c card.c iso7816.c dir.c ef-atr.c \
 	ef-gdo.c padding.c apdu.c simpletlv.c gp.c \
 	\
@@ -108,7 +108,7 @@ endif
 
 TIDY_FLAGS = $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
 TIDY_FILES = \
-	sc.c ctx.c errors.c \
+	sc.c ctx.c errors.c ossl.c \
 	asn1.c base64.c sec.c card.c iso7816.c dir.c ef-atr.c \
 	ef-gdo.c padding.c apdu.c simpletlv.c gp.c \
 	\
