@@ -868,7 +868,10 @@ typedef struct {
 #define SC_CTX_FLAG_DISABLE_COLORS			0x00000020
 
 #ifdef ENABLE_OPENSSL
+#include <openssl/opensslv.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/types.h>
+#endif
 #endif
 
 typedef struct sc_context {
@@ -1748,9 +1751,13 @@ void sc_free(void *p);
 EVP_MD *sc_evp_md(struct sc_context *context, const char *algorithm);
 void sc_evp_md_free(EVP_MD *md);
 EVP_PKEY_CTX *sc_evp_pkey_ctx_new(struct sc_context *context, EVP_PKEY *pkey);
+EVP_CIPHER *sc_evp_cipher(struct sc_context *context, const char *algorithm);
+void sc_evp_cipher_free(EVP_CIPHER *cipher);
 #else
 void *sc_evp_md(struct sc_context *context, const char *algorithm);
 void *sc_evp_pkey_ctx_new(struct sc_context *context, void *pkey);
+void *sc_evp_cipher(struct sc_context *context, const char *algorithm);
+void sc_evp_cipher_free(void *cipher);
 #endif
 
 #ifdef __cplusplus

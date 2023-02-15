@@ -386,3 +386,5 @@ sc_free
 sc_evp_md
 sc_evp_md_free
 sc_evp_pkey_ctx_new
+sc_evp_cipher
+sc_evp_cipher_free

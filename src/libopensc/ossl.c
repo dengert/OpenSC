@@ -50,6 +50,23 @@ EVP_PKEY_CTX *sc_evp_pkey_ctx_new(struct sc_context *context, EVP_PKEY *pkey)
 #endif
 }
 
+EVP_CIPHER *sc_evp_cipher(struct sc_context *context, const char *algorithm)
+{
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+    return (EVP_CIPHER *)EVP_get_cipherbyname(algorithm);
+#else
+    return EVP_CIPHER_fetch(context->osslctx, algorithm, NULL);
+#endif
+}
+
+void sc_evp_cipher_free(EVP_CIPHER *cipher)
+{
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    EVP_CIPHER_free(cipher);
+#endif
+    return;
+}
+
 #else
 void *sc_evp_md(struct sc_context *context, const char *algorithm)
 {
@@ -62,5 +79,13 @@ void sc_evp_md_free(void *md)
 void *sc_evp_pkey_ctx_new(struct sc_context *context, void *pkey)
 {
     return NULL;
+}
+void *sc_evp_cipher(struct sc_context *context, const char *algorithm)
+{
+    return NULL;
+}
+void sc_evp_cipher_free(void *cipher)
+{
+    return;
 }
 #endif
