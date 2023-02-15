@@ -43,6 +43,9 @@
 #ifdef ENABLE_OPENSSL
 #include <openssl/crypto.h>
 #include "sc-ossl-compat.h"
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/provider.h>
+#endif
 #endif
 
 
@@ -854,6 +857,23 @@ int sc_context_create(sc_context_t **ctx_out, const sc_context_param_t *parm)
 	}
 #endif
 
+#ifdef ENABLE_OPENSSL
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+        ctx->osslctx = OSSL_LIB_CTX_new();
+        if (ctx->osslctx == NULL) {
+            del_drvs(&opts);
+            sc_release_context(ctx);
+            return SC_ERROR_INTERNAL;
+        }
+        ctx->default_provider = OSSL_PROVIDER_load(ctx->osslctx, "default");
+        if (ctx->default_provider == NULL) {
+            del_drvs(&opts);
+            sc_release_context(ctx);
+            return SC_ERROR_INTERNAL;
+        }
+#endif
+#endif
+
 	process_config_file(ctx, &opts);
 	sc_log(ctx, "==================================="); /* first thing in the log */
 	sc_log(ctx, "opensc version: %s", sc_get_version());
@@ -948,6 +968,13 @@ int sc_release_context(sc_context_t *ctx)
 		if (drv->dll)
 			sc_dlclose(drv->dll);
 	}
+#ifdef ENABLE_OPENSSL
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+        if (ctx->default_provider) OSSL_PROVIDER_unload(ctx->default_provider);
+        if (ctx->osslctx) OSSL_LIB_CTX_free(ctx->osslctx);
+        ctx->osslctx = NULL;
+#endif
+#endif
 	if (ctx->preferred_language != NULL)
 		free(ctx->preferred_language);
 	if (ctx->mutex != NULL) {

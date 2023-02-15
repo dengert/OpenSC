@@ -867,6 +867,10 @@ typedef struct {
 #define SC_CTX_FLAG_DISABLE_POPUPS			0x00000010
 #define SC_CTX_FLAG_DISABLE_COLORS			0x00000020
 
+#ifdef ENABLE_OPENSSL
+#include <openssl/types.h>
+#endif
+
 typedef struct sc_context {
 	scconf_context *conf;
 	scconf_block *conf_blocks[3];
@@ -888,6 +892,13 @@ typedef struct sc_context {
 
 	sc_thread_context_t	*thread_ctx;
 	void *mutex;
+
+#ifdef ENABLE_OPENSSL
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+        OSSL_LIB_CTX *osslctx;
+        OSSL_PROVIDER *default_provider;
+#endif
+#endif
 
 	unsigned int magic;
 } sc_context_t;
