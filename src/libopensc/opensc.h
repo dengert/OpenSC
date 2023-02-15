@@ -897,6 +897,7 @@ typedef struct sc_context {
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
         OSSL_LIB_CTX *osslctx;
         OSSL_PROVIDER *default_provider;
+        OSSL_PROVIDER *legacy_provider;
 #endif
 #endif
 

@@ -878,6 +878,15 @@ int sc_context_create(sc_context_t **ctx_out, const sc_context_param_t *parm)
 	sc_log(ctx, "==================================="); /* first thing in the log */
 	sc_log(ctx, "opensc version: %s", sc_get_version());
 
+#ifdef ENABLE_OPENSSL
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+        ctx->legacy_provider = OSSL_PROVIDER_load(ctx->osslctx, "legacy");
+        if (ctx->legacy_provider == NULL) {
+            sc_log(ctx, "Failed to load OpenSSL Legacy provider");
+        }
+#endif
+#endif
+
 #ifdef ENABLE_PCSC
 	ctx->reader_driver = sc_get_pcsc_driver();
 #elif defined(ENABLE_CRYPTOTOKENKIT)
@@ -971,6 +980,7 @@ int sc_release_context(sc_context_t *ctx)
 #ifdef ENABLE_OPENSSL
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
         if (ctx->default_provider) OSSL_PROVIDER_unload(ctx->default_provider);
+        if (ctx->legacy_provider) OSSL_PROVIDER_unload(ctx->legacy_provider);
         if (ctx->osslctx) OSSL_LIB_CTX_free(ctx->osslctx);
         ctx->osslctx = NULL;
 #endif
