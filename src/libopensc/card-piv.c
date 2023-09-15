@@ -1396,7 +1396,6 @@ piv_get_data(sc_card_t *card, int enumtag, u8 **buf, size_t *buf_len)
 			!(priv->init_flags & (PIV_INIT_CONTACTLESS | PIV_INIT_IN_READER_LOCK_OBTAINED))) {
 		sc_log(card->ctx, "Set NIST_SM_FLAGS_FORCE_IN_CLEAR");
 		priv->sm_params.flags |= NIST_SM_FLAGS_FORCE_IN_CLEAR;
-		
 	}
 
 #endif /* PIV_SM_NIST */
@@ -3708,6 +3707,9 @@ piv_finish(sc_card_t *card)
 			piv_obj_cache_free_entry(card, i, 0);
 		}
 
+#ifdef PIV_SM_NIST
+		free(priv->sm_params.signer_cert_der);
+#endif /* PIV_SM_NIST */
 		free(priv);
 		card->drv_data = NULL; /* priv */
 	}

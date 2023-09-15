@@ -1500,7 +1500,7 @@ sm_nist_start(sc_card_t *card, sm_nist_params_t *params)
 
 	card->sm_ctx.sm_mode = SM_MODE_TRANSMIT;
 
-	/* TODO delete 
+	/*
 	 * sm-iso does not set an operation for sm_open which in our case
 	 * is sm_nist_open. which we will control from calling driver.
 	 * so unset sm_mode
