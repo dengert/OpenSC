@@ -4476,6 +4476,7 @@ piv_check_sw(struct sc_card *card, unsigned int sw1, unsigned int sw2)
 
 	int r;
 	piv_private_data_t *priv = PIV_DATA(card);
+#endif /* PIV_SM_NIST */
 
 	SC_FUNC_CALLED(card->ctx, SC_LOG_DEBUG_VERBOSE);
 
@@ -4768,7 +4769,6 @@ piv_logout(sc_card_t *card)
  * or started their own NIST SM session or  selected a different AID.
  * An SM protected apdu will cause a retry of the apdu
  * after sm_open is done again.
- *
  */
 
 /* card.c also calls piv_sm_open before this if a reset was done, but
@@ -4800,7 +4800,14 @@ piv_card_reader_lock_obtained(sc_card_t *card, int was_reset)
 		goto err;
 	}
 
+	if (priv->init_flags & PIV_INIT_IN_READER_LOCK_OBTAINED) {
+		sc_log(card->ctx, "Recursive call, return");
+		r = 0;
+		goto err;
+	}
+
 	priv->init_flags |= PIV_INIT_IN_READER_LOCK_OBTAINED;
+
 
 	/* first see if PIV applet is active AID by reading discovery object '7E' */
 	/* If not try selecting AID */
@@ -4820,6 +4827,10 @@ piv_card_reader_lock_obtained(sc_card_t *card, int was_reset)
 			r = 0; /* can't do anything with this card, hope there was no interference */
 		}
 	}
+	if ((r < 0 || was_reset > 0) && priv->sm_params.flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
+		r = iso7816_select_aid(card, piv_aids[0].value, piv_aids[0].len_short, temp, &templen);
+		if (r < 0)
+			goto err;
 
 	if (was_reset > 0)
 		priv->logged_in = SC_PIN_STATE_UNKNOWN;

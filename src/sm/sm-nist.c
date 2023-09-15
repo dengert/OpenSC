@@ -136,7 +136,6 @@ typedef struct nist_sm_session {
 	u8 SKenc[32]; /* keys are either AES 128 or AES 256 */
 	u8 SKrmac[32];
 	u8 enc_counter[16];
-
 	u8 resp_enc_counter[16];
 	u8 C_MCV[16];
 	u8 C_MCV_last[16];
@@ -272,6 +271,7 @@ Q2OS(int fsize, u8 *Q, size_t Qlen, u8 *OS, size_t *OSlen)
 	size_t f = fsize / 8;
 
 	i = (Qlen - 1) / 2;
+
 
 	if (!OS || !OSlen || *OSlen < f * 2 || !Q || i > f)
 		return SC_ERROR_INTERNAL;
@@ -1371,7 +1371,7 @@ sm_nist_start(sc_card_t *card, sm_nist_params_t *params)
 	struct iso_sm_ctx *sctx = NULL;
 	struct sm_nist_private_data *priv = NULL;
 	u8 *cert_blob = NULL;
-	size_t cert_blob_len = 0;
+	size_t cert_blob_len = 0
 
 	SC_FUNC_CALLED(card->ctx, SC_LOG_DEBUG_VERBOSE);
 
@@ -1422,7 +1422,7 @@ sm_nist_start(sc_card_t *card, sm_nist_params_t *params)
 			cert_blob = NULL;
 			cert_blob_len = 0;
 			if (SC_SUCCESS != sc_decompress_alloc(&cert_blob, &cert_blob_len,
-							  params->signer_cert_der, params->signer_cert_der_len, COMPRESSION_AUTO)) {
+							params->signer_cert_der, params->signer_cert_der_len, COMPRESSION_AUTO)) {
 				sc_log(card->ctx, "PIV decompression of SM CERT_SIGNER failed");
 				r = SC_ERROR_SM_AUTHENTICATION_FAILED;
 				goto err;
@@ -1436,7 +1436,6 @@ sm_nist_start(sc_card_t *card, sm_nist_params_t *params)
 			len = (int)cert_blob_len;
 			p = cert_blob;
 		}
-
 		if ((priv->signer_cert = d2i_X509(NULL, &p, len)) == NULL) {
 			sc_log(card->ctx, "OpenSSL failed to parse CERTIFICATE SIGNER");
 			sc_log_openssl(card->ctx);
@@ -1832,7 +1831,6 @@ err:
 	EVP_MAC_CTX_free(cmac_ctx);
 	EVP_MAC_free(mac);
 #endif
-
 	return r;
 }
 
