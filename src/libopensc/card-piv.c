@@ -426,6 +426,8 @@ typedef struct piv_private_data {
 	unsigned int pin_policy; /* from discovery */
 	unsigned int init_flags;
 	u8  csID; /* 800-73-4 Cipher Suite ID 0x27 or 0x2E */
+	u8 *ap_label;
+	size_t ap_labellen;
 #ifdef ENABLE_PIV_SM
 	cipher_suite_t *cs; /* active cipher_suite */
 	piv_cvc_t sm_cvc;  /* 800-73-4:  SM CVC Table 15 */
@@ -530,8 +532,14 @@ static const struct sc_atr_table piv_atrs[] = {
 	{ "3b:89:80:01:53:50:49:56:4b:45:59:37:30:44", NULL, NULL, SC_CARD_TYPE_PIV_II_PIVKEY, 0, NULL },
 	/* PIVKey SLE78 (57B) */
 	{ "3b:fd:96:00:00:81:31:fe:45:53:4c:4a:35:32:47:44:4c:31:32:38:43:52:57", NULL, NULL, SC_CARD_TYPE_PIV_II_PIVKEY, 0, NULL },
-	/* PIVKey uTrust (01) ISO 14443 Type B without historical bytes */
-	{ "3b:80:80:01:01", NULL, NULL, SC_CARD_TYPE_PIV_II_PIVKEY, 0, NULL },
+
+	/*
+	 * This is a generic ATR known to be used by PivApplet and
+	 * "PIVKey uTrust (01) ISO 14443 Type B without historical bytes"
+	 * Treat as SC_CARD_TYPE_PIV_II_BASE and assume no card issues for now.
+	 */
+	{ "3b:80:80:01:01", NULL, NULL, SC_CARD_TYPE_PIV_II_BASE, 0, NULL },
+
 	/* PIVKey uTrust (73) */
 	{ "3b:96:11:81:21:75:75:54:72:75:73:74:73", NULL, NULL, SC_CARD_TYPE_PIV_II_PIVKEY, 0, NULL },
 	/* PIVKey uTrust FIDO2 (73) */
@@ -2837,6 +2845,8 @@ static int piv_find_aid(sc_card_t * card)
 	const u8 *tag;
 	size_t taglen;
 	const u8 *nextac;
+	const u8 *ap_label;
+	size_t ap_labellen;
 	const u8 *pix;
 	size_t pixlen;
 	const u8 *actag;  /* Cipher Suite */
@@ -2892,6 +2902,17 @@ static int piv_find_aid(sc_card_t * card)
 #endif /* ENABLE_PIV_SM */
 					}
 				}
+			}
+
+			/* application label optional */
+			ap_label = sc_asn1_find_tag(card->ctx, tag, taglen, 0x50, &ap_labellen);
+			if (ap_label != NULL) {
+				free(priv->ap_label); /* free previous value if any */
+				if ((priv->ap_label = malloc(ap_labellen)) == NULL) {
+					LOG_FUNC_RETURN(card->ctx, SC_ERROR_OUT_OF_MEMORY);
+				}
+				memcpy(priv->ap_label, ap_label, ap_labellen);
+				priv->ap_labellen = ap_labellen;
 			}
 
 			pix = sc_asn1_find_tag(card->ctx, tag, taglen, 0x4F, &pixlen);
@@ -5244,6 +5265,7 @@ piv_finish(sc_card_t *card)
 			sc_unlock(card);
 		}
 		free(priv->aid_der.value);
+		free(priv->ap_label);
 		if (priv->w_buf)
 			free(priv->w_buf);
 		if (priv->offCardCertURL)
@@ -5251,6 +5273,7 @@ piv_finish(sc_card_t *card)
 		for (i = 0; i < PIV_OBJ_LAST_ENUM - 1; i++) {
 			piv_obj_cache_free_entry(card, i, 0);
 		}
+
 #ifdef ENABLE_PIV_SM
 		piv_clear_cvc_content(&priv->sm_cvc);
 		piv_clear_cvc_content(&priv->sm_in_cvc);
