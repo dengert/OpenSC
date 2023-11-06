@@ -272,6 +272,13 @@ _validate_pin(struct sc_pkcs15_card *p15card, struct sc_pkcs15_auth_info *auth_i
 	if (auth_info->attrs.pin.stored_length > SC_MAX_PIN_SIZE)
 		return SC_ERROR_BUFFER_TOO_SMALL;
 
+	/*
+	 * force pin.min_length to be at least 1. For pin pad and non pin pad
+	 * avoids a verify with Lc=0 which is query for login state
+	 */
+	if (auth_info->attrs.pin.min_length == 0)
+		auth_info->attrs.pin.min_length = 1;
+
 	/* if we use pinpad, no more checks are needed */
 	if ((p15card->card->reader->capabilities & SC_READER_CAP_PIN_PAD
 				|| p15card->card->caps & SC_CARD_CAP_PROTECTED_AUTHENTICATION_PATH)
@@ -309,13 +316,35 @@ sc_pkcs15_verify_pin(struct sc_pkcs15_card *p15card, struct sc_pkcs15_object *pi
 
 	r = _validate_pin(p15card, auth_info, pinlen);
 
-	if (r)
+	if (r < 0)
 		LOG_FUNC_RETURN(ctx, r);
+
+	/*
+	 * Only way to get here with pinlen == 0 is reader supports PIN_PAD reader
+	 * or card driver supports SC_CARD_CAP_PROTECTED_AUTHENTICATION_PATH
+	 * enforced by _validate_pin. 
+	 */
+ 	if (r == 0 && pinlen == 0 && auth_info->auth_method == SC_AC_CHV
+			&& auth_info->auth_type == SC_PKCS15_PIN_AUTH_TYPE_PIN) {
+		/*
+		 * To avoid error or unnecessary pin prompting on pinpad call
+		 * pkcs15_get_pin_info to test if logged in or not 
+		 */
+		r = sc_pkcs15_get_pin_info(p15card, pin_obj);
+
+		if (r == SC_SUCCESS && auth_info->logged_in == SC_PIN_STATE_LOGGED_IN)
+			LOG_FUNC_RETURN(ctx, r);
+	}
 
 	r = _sc_pkcs15_verify_pin(p15card, pin_obj, pincode, pinlen);
 
-	if (r == SC_SUCCESS)
+	if (r == SC_SUCCESS) {
+		if (auth_info->process_verified_pin == 0) {
+			sc_log(ctx, "Process first verify of pin %X", auth_info->attrs.pin.reference);
+			auth_info->process_verified_pin = 1;
+		}
 		sc_pkcs15_pincache_add(p15card, pin_obj, pincode, pinlen);
+	}
 
 	LOG_FUNC_RETURN(ctx, r);
 }
@@ -716,6 +745,18 @@ int sc_pkcs15_get_pin_info(struct sc_pkcs15_card *p15card,
 	data.pin_reference = pin_info->attrs.pin.reference;
 
 	r = sc_pin_cmd(card, &data, NULL);
+
+	if (r == SC_SUCCESS && pin_info->process_verified_pin == 0) {
+		/*
+		 * May be running from login or screen saver that must 
+		 * force the user to enter their pin to prove user is at the console
+		 * and can not use existing login state from a card or token to bypass the verify.
+		 */
+		sc_log(ctx,"query before process has done first verify for pin %X", pin_info->attrs.pin.reference);
+		data.pin1.logged_in = SC_PIN_STATE_LOGGED_OUT;
+		pin_info->logged_in = SC_PIN_STATE_LOGGED_OUT;
+	}
+
 	if (r == SC_SUCCESS) {
 		if (data.pin1.max_tries > 0)
 			pin_info->max_tries = data.pin1.max_tries;

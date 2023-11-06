@@ -131,6 +131,7 @@ struct sc_pkcs15_auth_info {
 
 	int tries_left, max_tries, logged_in;
 	int max_unlocks;
+	int process_verified_pin;
  };
 typedef struct sc_pkcs15_auth_info sc_pkcs15_auth_info_t;
 
