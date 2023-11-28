@@ -4776,12 +4776,10 @@ derive_ec_key(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE key, CK_MECHANISM_TYPE
 		{CKA_KEY_TYPE, &newkey_type, sizeof(newkey_type)},
 		{CKA_SENSITIVE, &_false, sizeof(_false)},
 		{CKA_EXTRACTABLE, &_true, sizeof(_true)},
-		{CKA_ENCRYPT, &_true, sizeof(_true)},
-		{CKA_DECRYPT, &_true, sizeof(_true)},
 		{CKA_WRAP, &_true, sizeof(_true)},
 		{CKA_UNWRAP, &_true, sizeof(_true)}
 	};
-	int n_attrs = 9;
+	int n_attrs = 7;
 	CK_ECDH1_DERIVE_PARAMS ecdh_parms;
 	CK_RV rv;
 	BIO *bio_in = NULL;
@@ -4793,6 +4791,7 @@ derive_ec_key(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE key, CK_MECHANISM_TYPE
 	unsigned char * derp = NULL;
 	size_t  der_size = 0;
 	EVP_PKEY *pkey = NULL;
+	int key_id = 0; /* nid of peer key */
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
 	EC_KEY *eckey = NULL;
 	const EC_GROUP *ecgroup = NULL;
@@ -4803,7 +4802,7 @@ derive_ec_key(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE key, CK_MECHANISM_TYPE
 	int nid = 0;
 #endif
 
-	printf("Using derive algorithm 0x%8.8lx %s\n", opt_mechanism, p11_mechanism_to_name(mech_mech));
+	printf("Using derive algorithm 0x%8.8lx %s\n", mech_mech, p11_mechanism_to_name(mech_mech));
 	memset(&mech, 0, sizeof(mech));
 	mech.mechanism = mech_mech;
 
@@ -4819,26 +4818,38 @@ derive_ec_key(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE key, CK_MECHANISM_TYPE
 #endif
 
 	if (!pkey)
-		util_fatal("Cannot read EC key from %s", opt_input);
+		util_fatal("Cannot read peer EC key from %s", opt_input);
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	key_id = EVP_PKEY_get_id(pkey);
+#else
+	key_id = EVP_PKEY_id(pkey);
+#endif
+	
+	switch(key_id) {
+		case EVP_PKEY_EC: /* CKK_EC*/
 
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
-	eckey = EVP_PKEY_get0_EC_KEY(pkey);
-	ecpoint = EC_KEY_get0_public_key(eckey);
-	ecgroup = EC_KEY_get0_group(eckey);
+		eckey = EVP_PKEY_get0_EC_KEY(pkey);
+		ecpoint = EC_KEY_get0_public_key(eckey);
+		ecgroup = EC_KEY_get0_group(eckey);
 
-	if (!ecpoint || !ecgroup)
-		util_fatal("Failed to parse other EC key from %s", opt_input);
+		if (!ecpoint || !ecgroup)
+			util_fatal("Failed to parse other EC key from %s", opt_input);
 #else
-	if (EVP_PKEY_get_group_name(pkey, name, sizeof(name), &len) != 1
-	 || (nid = OBJ_txt2nid(name)) == NID_undef
-	 || (ecgroup = EC_GROUP_new_by_curve_name(nid)) == NULL)
-		util_fatal("Failed to parse other EC key from %s", opt_input);
+		if (EVP_PKEY_get_group_name(pkey, name, sizeof(name), &len) != 1
+		 || (nid = OBJ_txt2nid(name)) == NID_undef
+		 || (ecgroup = EC_GROUP_new_by_curve_name(nid)) == NULL)
+			util_fatal("Failed to parse other EC key from %s", opt_input);
 #endif
 
-	/* both eckeys must be same curve */
-	key_len = (EC_GROUP_get_degree(ecgroup) + 7) / 8;
-	FILL_ATTR(newkey_template[n_attrs], CKA_VALUE_LEN, &key_len, sizeof(key_len));
-	n_attrs++;
+		/* both eckeys must be same curve */
+		key_len = (EC_GROUP_get_degree(ecgroup) + 7) / 8;
+		FILL_ATTR(newkey_template[n_attrs], CKA_VALUE_LEN, &key_len, sizeof(key_len));
+		n_attrs++;
+
+		break;
+	}
 
 	if (opt_allowed_mechanisms_len > 0) {
 		FILL_ATTR(newkey_template[n_attrs],
@@ -4848,11 +4859,28 @@ derive_ec_key(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE key, CK_MECHANISM_TYPE
 	}
 
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
-	buf_size = EC_POINT_point2oct(ecgroup, ecpoint, POINT_CONVERSION_UNCOMPRESSED, NULL,	    0, NULL);
-	buf = (unsigned char *)malloc(buf_size);
-	if (buf == NULL)
-	    util_fatal("malloc() failure\n");
-	buf_size = EC_POINT_point2oct(ecgroup, ecpoint, POINT_CONVERSION_UNCOMPRESSED, buf, buf_size, NULL);
+	switch(key_id) {
+		case EVP_PKEY_EC:
+			buf_size = EC_POINT_point2oct(ecgroup, ecpoint, POINT_CONVERSION_UNCOMPRESSED, NULL,	    0, NULL);
+			buf = (unsigned char *)malloc(buf_size);
+			if (buf == NULL)
+				util_fatal("malloc() failure\n");
+			buf_size = EC_POINT_point2oct(ecgroup, ecpoint, POINT_CONVERSION_UNCOMPRESSED, buf, buf_size, NULL);
+		break;
+	
+		case EVP_PKEY_X25519:
+		case EVP_PKEY_X448:
+			EVP_PKEY_get_raw_public_key(pkey, NULL, &buf_size);
+			if (buf_size == 0)
+				util_fatal("Unable to get of peer key\n");
+			buf = (unsigned char *)malloc(buf_size);
+			if (buf == NULL)
+				util_fatal("malloc() failure\n");
+			EVP_PKEY_get_raw_public_key(pkey, buf, &buf_size);
+			break;
+		default:
+			util_fatal("Unknown EVP_PKEY_id\n");
+	}
 #else
 	EC_GROUP_free(ecgroup);
 	EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY, NULL, 0, &buf_size);
@@ -4864,6 +4892,26 @@ derive_ec_key(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE key, CK_MECHANISM_TYPE
 		util_fatal("Failed to parse other EC key from %s", opt_input);
 	}
 #endif
+	
+
+	switch (key_id) {
+		case EVP_PKEY_EC: /* CKK_EC*/
+			if (mech_mech != CKM_ECDH1_DERIVE && mech_mech != CKM_ECDH1_COFACTOR_DERIVE)
+				util_fatal("Peer key %s not usable with %s", "CKK_EC", p11_mechanism_to_name(mech_mech));
+			break;
+
+		case EVP_PKEY_X25519:  /* "CKK_EC_MONTGOMERY */
+		case EVP_PKEY_X448:
+			if (mech_mech != CKM_ECDH1_DERIVE)
+				util_fatal("Peer key %s not usable with %s", "CKK_EC_MONTGOMERY", p11_mechanism_to_name(mech_mech));
+			break;
+
+			
+		default:
+			util_fatal("Peer key not usable with derive or unknown %i", key_id);
+			break;
+	}
+
 
 	if (opt_derive_pass_der) {
 		octet = ASN1_OCTET_STRING_new();
@@ -4918,18 +4966,20 @@ derive_key(CK_SLOT_ID slot, CK_SESSION_HANDLE session, CK_OBJECT_HANDLE key)
 	CK_ULONG value_len = 0;
 	CK_OBJECT_HANDLE derived_key = 0;
 	int rv, fd;
+	CK_KEY_TYPE key_type = getKEY_TYPE(session, key);
+
 
 	if (!opt_mechanism_used)
 		if (!find_mechanism(slot, CKF_DERIVE|opt_allow_sw, NULL, 0, &opt_mechanism))
 			util_fatal("Derive mechanism not supported");
 
-	switch(opt_mechanism) {
-	case CKM_ECDH1_COFACTOR_DERIVE:
-	case CKM_ECDH1_DERIVE:
+	switch(key_type) {
+	case CKK_EC:
+	case CKK_EC_MONTGOMERY:
 		derived_key= derive_ec_key(session, key, opt_mechanism);
 		break;
 	default:
-		util_fatal("mechanism not supported for derive");
+		util_fatal("Key type %lu does not support derive", key_type);
 		break;
 	}
 
