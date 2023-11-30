@@ -204,6 +204,7 @@ struct sc_pkcs15_pubkey_ec {
 };
 
 struct sc_pkcs15_pubkey_eddsa {
+	struct sc_ec_parameters params;
 	struct sc_pkcs15_u8 pubkey;
 };
 
@@ -213,7 +214,8 @@ struct sc_pkcs15_prkey_ec {
 	struct sc_pkcs15_u8		ecpointQ; /* This is NOT DER, just value and length */
 };
 
-struct sc_pkcs15_prkey_eddsa {
+struct sc_pkcs15_prkey_eddsa {   /* also used for eddsa and ecdh */
+	struct sc_ec_parameters params;
 	struct sc_pkcs15_u8 pubkey;
 	struct sc_pkcs15_u8 value;
 };

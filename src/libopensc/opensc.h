@@ -294,6 +294,7 @@ struct sc_ec_parameters {
 
 	int type;
 	size_t field_length;
+	/*TODO DEE id EDDSA, could have CK_EDDSA_PARAMS */
 };
 
 typedef struct sc_algorithm_info {

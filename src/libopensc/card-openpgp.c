@@ -89,6 +89,8 @@ static struct sc_card_driver pgp_drv = {
 
 static pgp_ec_curves_t  ec_curves_openpgp34[] = {
 	/* OpenPGP 3.4+ Ed25519 and Curve25519 */
+/*	{{{1, 3, 101, 110, -1}}, 256}, /* X25519 RFC 8410 => CKK_EC_MONTGOMERY will be changed to curve25519 on generation  */
+/*	{{{1, 3, 101, 112, -1}}, 256}, /* Ed25519 RFC 8410 => CKK_EC_EDWARDS  ed25519 will be changed to ed25519 on generation */
 	{{{1, 3, 6, 1, 4, 1, 3029, 1, 5, 1, -1}}, 256}, /* curve25519 for encryption => CKK_EC_MONTGOMERY */
 	{{{1, 3, 6, 1, 4, 1, 11591, 15, 1, -1}}, 256}, /* ed25519 for signatures => CKK_EC_EDWARDS */
 	/* v3.0+ supports: [RFC 4880 & 6637] 0x12 = ECDH, 0x13 = ECDSA */
@@ -655,6 +657,7 @@ pgp_parse_algo_attr_blob(sc_card_t *card, const pgp_blob_t *blob,
 			}
 			/* We did not match the OID */
 			if (priv->ec_curves[j].oid.value[0] < 0) {
+				sc_log(card->ctx, "Unknown oid %s", sc_dump_oid(&oid));
 				LOG_FUNC_RETURN(card->ctx, SC_ERROR_UNKNOWN_DATA_RECEIVED);
 			}
 			break;
@@ -675,7 +678,7 @@ int _pgp_handle_curve25519(sc_card_t *card,
 	* OpenPGP card supports only derivation using these
 	* keys as far as I know */
 	_sc_card_add_xeddsa_alg(card, key_info.u.ec.key_length,
-	    SC_ALGORITHM_ECDH_CDH_RAW, 0, &key_info.u.ec.oid);
+	    SC_ALGORITHM_ECDH_CDH_RAW |SC_ALGORITHM_ONBOARD_KEY_GEN , 0, &key_info.u.ec.oid);
 	sc_log(card->ctx, "DO %zX: Added XEDDSA algorithm (%d), mod_len = %d",
 	    do_num, SC_ALGORITHM_XEDDSA, key_info.u.ec.key_length);
 	return 1;
@@ -727,7 +730,7 @@ int _pgp_add_algo(sc_card_t *card, sc_cardctl_openpgp_keygen_info_t key_info, si
 		if (_pgp_handle_curve25519(card, key_info, do_num))
 			break;
 		_sc_card_add_eddsa_alg(card, key_info.u.ec.key_length,
-			SC_ALGORITHM_EDDSA_RAW, 0, &key_info.u.ec.oid);
+			SC_ALGORITHM_EDDSA_RAW | SC_ALGORITHM_ONBOARD_KEY_GEN, 0, &key_info.u.ec.oid);
 
 		sc_log(card->ctx, "DO %zX: Added EDDSA algorithm (%d), mod_len = %d" ,
 			do_num, key_info.algorithm, key_info.u.ec.key_length);

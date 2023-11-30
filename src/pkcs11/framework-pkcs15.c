@@ -3372,23 +3372,33 @@ pkcs15_gen_keypair(struct sc_pkcs11_slot *slot, CK_MECHANISM_PTR pMechanism,
 		keygen_args.prkey_args.key.algorithm = SC_ALGORITHM_EC;
 		pub_args.key.algorithm               = SC_ALGORITHM_EC;
 	}
-	else if (keytype == CKK_EC_EDWARDS) {
-		/* TODO Validate EC_PARAMS contains curveName "edwards25519" or "edwards448" (from RFC 8032)
-		 * or id-Ed25519 or id-Ed448 (or equivalent OIDs in oId field) (from RFC 8410)
-		 * otherwise return CKR_CURVE_NOT_SUPPORTED
-		 */
-		keygen_args.prkey_args.key.algorithm = SC_ALGORITHM_EDDSA;
-		pub_args.key.algorithm               = SC_ALGORITHM_EDDSA;
-		return CKR_CURVE_NOT_SUPPORTED;
-	}
-	else if (keytype == CKK_EC_MONTGOMERY) {
-		/* TODO Validate EC_PARAMS contains curveName "curve25519" or "curve448" (from RFC 7748)
-		 * or id-X25519 or id-X448 (or equivalent OIDs in oId field) (from RFC 8410)
-		 * otherwise return CKR_CURVE_NOT_SUPPORTED
-		 */
-		keygen_args.prkey_args.key.algorithm = SC_ALGORITHM_XEDDSA;
-		pub_args.key.algorithm               = SC_ALGORITHM_XEDDSA;
-		return CKR_CURVE_NOT_SUPPORTED;
+	else if (keytype == CKK_EC_EDWARDS || keytype == CKK_EC_MONTGOMERY) {
+		struct sc_lv_data *der = &keygen_args.prkey_args.key.u.eddsa.params.der;
+		void *ptr = NULL;
+
+		der->len = sizeof(struct sc_object_id);
+		rv = attr_find_and_allocate_ptr(pPubTpl, ulPubCnt, CKA_EC_PARAMS, &ptr, &der->len);
+		der->value = (unsigned char *) ptr;
+		if (rv != CKR_OK)   {
+			sc_unlock(p11card->card);
+			return rv;
+		}
+		if (keytype == CKK_EC_EDWARDS) {
+			/* TODO Validate EC_PARAMS contains curveName "edwards25519" or "edwards448" (from RFC 8032)
+			 * or id-Ed25519 or id-Ed448 (or equivalent OIDs in oId field) (from RFC 8410)
+			 * otherwise return CKR_CURVE_NOT_SUPPORTED
+			 */
+			keygen_args.prkey_args.key.algorithm = SC_ALGORITHM_EDDSA;
+			pub_args.key.algorithm               = SC_ALGORITHM_EDDSA;
+		}
+		if (keytype == CKK_EC_MONTGOMERY) {
+			/* TODO Validate EC_PARAMS contains curveName "curve25519" or "curve448" (from RFC 7748)
+			 * or id-X25519 or id-X448 (or equivalent OIDs in oId field) (from RFC 8410)
+			 * otherwise return CKR_CURVE_NOT_SUPPORTED
+			 */
+			keygen_args.prkey_args.key.algorithm = SC_ALGORITHM_XEDDSA;
+			pub_args.key.algorithm               = SC_ALGORITHM_XEDDSA;
+		}
 	}
 	else   {
 		/* CKA_KEY_TYPE is set, but keytype isn't correct */
