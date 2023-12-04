@@ -385,12 +385,14 @@ static int openpgp_generate_key(sc_profile_t *profile, sc_pkcs15_card_t *p15card
 		r = openpgp_generate_key_ec(card, obj, pubkey);
 		break;
 	case SC_PKCS15_TYPE_PRKEY_EDDSA:
-		if (card->type != SC_CARD_TYPE_OPENPGP_GNUK) {
+	case SC_PKCS15_TYPE_PRKEY_XEDDSA:
+		if (card->type != SC_CARD_TYPE_OPENPGP_GNUK && card->type < SC_CARD_TYPE_OPENPGP_V3) {
 			sc_debug(card->ctx, SC_LOG_DEBUG_NORMAL, "EdDSA is not supported on this card");
 			return SC_ERROR_NOT_SUPPORTED;
 		}
 		r = openpgp_generate_key_ec(card, obj, pubkey);
 		break;
+
 	default:
 		r = SC_ERROR_NOT_SUPPORTED;
 		sc_log(card->ctx, "%s: Key generation failed: Unknown/unsupported key type.", strerror(r));
