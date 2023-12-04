@@ -5872,8 +5872,9 @@ static int read_object(CK_SESSION_HANDLE session)
 
 			value = getEC_POINT(session, obj, &len);
 			/* PKCS#11-compliant modules should return ASN1_OCTET_STRING */
+			/* TODO DEE RFC 8410 says CKK_EDWARDS and CKK_MONTGOMERY pubkeys are bitstrings */
 			a = value;
-			os = d2i_ASN1_OCTET_STRING(NULL, &a, (long)len);
+			os = d2i_ASN1_BIT_STRING(NULL, &a, (long)len);
 			if (!os) {
 				util_fatal("cannot decode EC_POINT");
 			}
@@ -5881,8 +5882,8 @@ static int read_object(CK_SESSION_HANDLE session)
 				util_fatal("Invalid length of EC_POINT value");
 			}
 			key = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, NULL,
-				(const uint8_t *)os->data,
-				os->length);
+				(const uint8_t *)os->data+1,
+				os->length-1);
 			ASN1_STRING_free(os);
 			if (key == NULL) {
 				util_fatal("out of memory");

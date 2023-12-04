@@ -544,7 +544,7 @@ static struct sc_asn1_entry c_asn1_ec_pointQ[C_ASN1_EC_POINTQ_SIZE] = {
 
 #define C_ASN1_EDDSA_PUBKEY_SIZE 2
 static struct sc_asn1_entry c_asn1_eddsa_pubkey[C_ASN1_EDDSA_PUBKEY_SIZE] = {
-		{ "pubkey", SC_ASN1_OCTET_STRING, SC_ASN1_TAG_OCTET_STRING, SC_ASN1_ALLOC, NULL, NULL },
+		{ "pubkey", SC_ASN1_BIT_STRING, SC_ASN1_TAG_BIT_STRING, SC_ASN1_ALLOC, NULL, NULL },
 		{ NULL, 0, 0, 0, NULL, NULL }
 };
 
@@ -1589,9 +1589,16 @@ sc_pkcs15_fix_ec_parameters(struct sc_context *ctx, struct sc_ec_parameters *ecp
 		sc_log(ctx, "Curve length %"SC_FORMAT_LEN_SIZE_T"u",
 		       ecparams->field_length);
 		if (mapped) {
+			/* replace the printable string version with the mapped oid */
 			free(ecparams->der.value);
-			ecparams->der.value =  NULL;
-			ecparams->der.len =  0;
+			ecparams->der.len = strlen(ec_curve_infos[ii].oid_encoded) / 2;
+			ecparams->der.value = malloc(ecparams->der.len);
+			if (!ecparams->der.value)
+				LOG_FUNC_RETURN(ctx, SC_ERROR_OUT_OF_MEMORY);
+			if (sc_hex_to_bin(ec_curve_infos[ii].oid_encoded, ecparams->der.value, &ecparams->der.len) < 0) {
+				free(ecparams->der.value);
+				LOG_FUNC_RETURN(ctx, SC_ERROR_INVALID_ARGUMENTS);
+			}
 		}
 	}
 	else if (ecparams->named_curve) {	/* it can be name of curve or OID in ASCII form */
