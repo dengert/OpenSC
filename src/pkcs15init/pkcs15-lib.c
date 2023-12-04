@@ -1305,9 +1305,12 @@ sc_pkcs15init_init_prkdf(struct sc_pkcs15_card *p15card, struct sc_profile *prof
 		keyinfo_gostparams->gostr3411 = keyargs->params.gost.gostr3411;
 		keyinfo_gostparams->gost28147 = keyargs->params.gost.gost28147;
 	}
-	else if (key->algorithm == SC_ALGORITHM_EC)  {
+	else if (key->algorithm == SC_ALGORITHM_EC || key->algorithm == SC_ALGORITHM_EDDSA || key->algorithm == SC_ALGORITHM_XEDDSA)  {
 		/* keyargs->key.u.ec.params.der.value is allocated in keyargs, which is on stack */
 		struct sc_ec_parameters *ecparams = &keyargs->key.u.ec.params;
+		if (key->algorithm == SC_ALGORITHM_EDDSA || key->algorithm == SC_ALGORITHM_XEDDSA)
+			ecparams = &keyargs->key.u.eddsa.params;
+
 		new_ecparams = calloc(1, sizeof(struct sc_ec_parameters));
 		if (!new_ecparams) {
 			r = SC_ERROR_OUT_OF_MEMORY;
@@ -2779,6 +2782,10 @@ key_pkcs15_algo(struct sc_pkcs15_card *p15card, unsigned int algorithm)
 		return SC_PKCS15_TYPE_PRKEY_GOSTR3410;
 	case SC_ALGORITHM_EC:
 		return SC_PKCS15_TYPE_PRKEY_EC;
+	case SC_ALGORITHM_EDDSA:
+		return SC_PKCS15_TYPE_PRKEY_EDDSA;
+	case SC_ALGORITHM_XEDDSA:
+		return SC_PKCS15_TYPE_PRKEY_XEDDSA;
 	case SC_ALGORITHM_DES:
 		return SC_PKCS15_TYPE_SKEY_DES;
 	case SC_ALGORITHM_3DES:
