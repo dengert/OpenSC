@@ -3389,6 +3389,7 @@ pkcs15_gen_keypair(struct sc_pkcs11_slot *slot, CK_MECHANISM_PTR pMechanism,
 			 * otherwise return CKR_CURVE_NOT_SUPPORTED
 			 */
 			keygen_args.prkey_args.key.algorithm = SC_ALGORITHM_EDDSA;
+			keygen_args.prkey_args.usage |= SC_PKCS15_PRKEY_USAGE_SIGN;
 			pub_args.key.algorithm               = SC_ALGORITHM_EDDSA;
 		}
 		if (keytype == CKK_EC_MONTGOMERY) {
@@ -3397,6 +3398,7 @@ pkcs15_gen_keypair(struct sc_pkcs11_slot *slot, CK_MECHANISM_PTR pMechanism,
 			 * otherwise return CKR_CURVE_NOT_SUPPORTED
 			 */
 			keygen_args.prkey_args.key.algorithm = SC_ALGORITHM_XEDDSA;
+			keygen_args.prkey_args.usage |= SC_PKCS15_PRKEY_USAGE_DERIVE;
 			pub_args.key.algorithm               = SC_ALGORITHM_XEDDSA;
 		}
 	}
