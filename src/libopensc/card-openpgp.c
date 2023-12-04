@@ -89,8 +89,6 @@ static struct sc_card_driver pgp_drv = {
 
 static pgp_ec_curves_t  ec_curves_openpgp34[] = {
 	/* OpenPGP 3.4+ Ed25519 and Curve25519 */
-/*	{{{1, 3, 101, 110, -1}}, 256}, /* X25519 RFC 8410 => CKK_EC_MONTGOMERY will be changed to curve25519 on generation  */
-/*	{{{1, 3, 101, 112, -1}}, 256}, /* Ed25519 RFC 8410 => CKK_EC_EDWARDS  ed25519 will be changed to ed25519 on generation */
 	{{{1, 3, 6, 1, 4, 1, 3029, 1, 5, 1, -1}}, 256}, /* curve25519 for encryption => CKK_EC_MONTGOMERY */
 	{{{1, 3, 6, 1, 4, 1, 11591, 15, 1, -1}}, 256}, /* ed25519 for signatures => CKK_EC_EDWARDS */
 	/* v3.0+ supports: [RFC 4880 & 6637] 0x12 = ECDH, 0x13 = ECDSA */
@@ -3015,11 +3013,11 @@ pgp_gen_key(sc_card_t *card, sc_cardctl_openpgp_keygen_info_t *key_info)
 
 	/* protect incompatible cards against non-RSA */
 	if (key_info->algorithm != SC_OPENPGP_KEYALGO_RSA
+		&& card->type != SC_CARD_TYPE_OPENPGP_GNUK
 		&& priv->bcd_version < OPENPGP_CARD_3_0)
 		LOG_FUNC_RETURN(card->ctx, SC_ERROR_NOT_SUPPORTED);
-	if (key_info->algorithm == SC_OPENPGP_KEYALGO_EDDSA
-		&& card->type != SC_CARD_TYPE_OPENPGP_GNUK)
-		LOG_FUNC_RETURN(card->ctx, SC_ERROR_NOT_SUPPORTED);
+
+	/* X25519 covered under ECDH */ 
 
 	/* set Control Reference Template for key */
 	if (key_info->key_id == SC_OPENPGP_KEY_SIGN)
