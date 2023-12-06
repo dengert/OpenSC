@@ -146,10 +146,10 @@ static struct ec_curve_info {
 	{"secp256k1",		"1.3.132.0.10", "06052B8104000A", 256, 0},
 	{"secp521k1",		"1.3.132.0.35", "06052B81040023", 521, 0},
 
-	{"edwards25519","1.3.6.1.4.1159.15.1", "130c656477617264733235353139", 256, CKM_EC_EDWARDS_KEY_PAIR_GEN}, /* send by curve name */
-	{"curve25519", "1.3.6.1.4.3029.1.5.1", "130a63757276653235353139", 256, CKM_EC_MONTGOMERY_KEY_PAIR_GEN}, /* send by curve name */
-	{"Ed25519", "1.3.101.112", "06032b6570", 256, CKM_EC_EDWARDS_KEY_PAIR_GEN}, /* RFC 4810 send by OID */
-	{"X25519", "1.3.101.110", "06032b656e", 256, CKM_EC_MONTGOMERY_KEY_PAIR_GEN}, /* RFC 4810 send by OID */
+	{"edwards25519","1.3.6.1.4.1159.15.1", "130c656477617264733235353139", 255, CKM_EC_EDWARDS_KEY_PAIR_GEN}, /* send by curve name */
+	{"curve25519", "1.3.6.1.4.3029.1.5.1", "130a63757276653235353139", 255, CKM_EC_MONTGOMERY_KEY_PAIR_GEN}, /* send by curve name */
+	{"Ed25519", "1.3.101.112", "06032b6570", 255, CKM_EC_EDWARDS_KEY_PAIR_GEN}, /* RFC 4810 send by OID */
+	{"X25519", "1.3.101.110", "06032b656e", 255, CKM_EC_MONTGOMERY_KEY_PAIR_GEN}, /* RFC 4810 send by OID */
 
 	{NULL, NULL, NULL, 0, 0},
 };
@@ -5872,9 +5872,8 @@ static int read_object(CK_SESSION_HANDLE session)
 
 			value = getEC_POINT(session, obj, &len);
 			/* PKCS#11-compliant modules should return ASN1_OCTET_STRING */
-			/* TODO DEE RFC 8410 says CKK_EDWARDS and CKK_MONTGOMERY pubkeys are bitstrings */
 			a = value;
-			os = d2i_ASN1_BIT_STRING(NULL, &a, (long)len);
+			os = d2i_ASN1_OCTET_STRING(NULL, &a, (long)len);
 			if (!os) {
 				util_fatal("cannot decode EC_POINT");
 			}
@@ -5882,8 +5881,8 @@ static int read_object(CK_SESSION_HANDLE session)
 				util_fatal("Invalid length of EC_POINT value");
 			}
 			key = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, NULL,
-				(const uint8_t *)os->data+1,
-				os->length-1);
+				(const uint8_t *)os->data,
+				os->length);
 			ASN1_STRING_free(os);
 			if (key == NULL) {
 				util_fatal("out of memory");

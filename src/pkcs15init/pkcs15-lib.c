@@ -1305,11 +1305,9 @@ sc_pkcs15init_init_prkdf(struct sc_pkcs15_card *p15card, struct sc_profile *prof
 		keyinfo_gostparams->gostr3411 = keyargs->params.gost.gostr3411;
 		keyinfo_gostparams->gost28147 = keyargs->params.gost.gost28147;
 	}
-	else if (key->algorithm == SC_ALGORITHM_EC || key->algorithm == SC_ALGORITHM_EDDSA || key->algorithm == SC_ALGORITHM_XEDDSA)  {
+	else if (key->algorithm == SC_ALGORITHM_EC)  {
 		/* keyargs->key.u.ec.params.der.value is allocated in keyargs, which is on stack */
 		struct sc_ec_parameters *ecparams = &keyargs->key.u.ec.params;
-		if (key->algorithm == SC_ALGORITHM_EDDSA || key->algorithm == SC_ALGORITHM_XEDDSA)
-			ecparams = &keyargs->key.u.eddsa.params;
 
 		new_ecparams = calloc(1, sizeof(struct sc_ec_parameters));
 		if (!new_ecparams) {
@@ -1608,15 +1606,11 @@ sc_pkcs15init_generate_key(struct sc_pkcs15_card *p15card, struct sc_profile *pr
 		r = sc_copy_gost_params(&(pubkey_args.key.u.gostr3410.params), &(keygen_args->prkey_args.key.u.gostr3410.params));
 		LOG_TEST_GOTO_ERR(ctx, r, "Cannot allocate GOST parameters");
 	}
-	/* TODO need ECDSA or  ECDH */
+	/*  EC, ECDSA or XEDDSA use same u.ec.params */
 	else if (algorithm == SC_ALGORITHM_EC)   {
 		/* needs to be freed in case of failure when pubkey is not set yet */
 		r = sc_copy_ec_params(&pubkey_args.key.u.ec.params, &keygen_args->prkey_args.key.u.ec.params);
 		LOG_TEST_GOTO_ERR(ctx, r, "Cannot allocate EC parameters");
-	}
-	else if (algorithm == SC_ALGORITHM_EDDSA || algorithm == SC_ALGORITHM_XEDDSA) {
-		/* needs to be freed in case of failure when pubkey is not set yet */
-		r = sc_copy_ec_params(&pubkey_args.key.u.eddsa.params, &keygen_args->prkey_args.key.u.eddsa.params);
 	}
 
 	/* Generate the private key on card */
@@ -2526,9 +2520,6 @@ check_keygen_params_consistency(struct sc_card *card,
 	if ((alg == SC_ALGORITHM_EC || alg == SC_ALGORITHM_EDDSA || alg == SC_ALGORITHM_XEDDSA) && prkey)   {
 		struct sc_ec_parameters *ecparams = &prkey->key.u.ec.params;
 
-		if (alg == SC_ALGORITHM_EDDSA || alg == SC_ALGORITHM_XEDDSA)
-			ecparams = &prkey->key.u.eddsa.params;
-
 		rv = sc_pkcs15_fix_ec_parameters(ctx, ecparams);
 		LOG_TEST_RET(ctx, rv, "Cannot fix EC parameters");
 
@@ -2536,8 +2527,6 @@ check_keygen_params_consistency(struct sc_card *card,
 		if (!*keybits)
 			*keybits = ecparams->field_length;
 	}
-
-	/* TODO DEE possible place to change OID for RFC 7748 to RFC 8410 i for openpgp cards */
 
 	for (i = 0; i < card->algorithm_count; i++) {
 		struct sc_algorithm_info *info = &card->algorithms[i];
@@ -2602,22 +2591,6 @@ check_key_compatibility(struct sc_pkcs15_card *p15card, unsigned int alg,
 					LOG_FUNC_RETURN(ctx, SC_ERROR_OBJECT_NOT_VALID);
 			if (sc_valid_oid(&info->u._ec.params.id))
 				if (!sc_compare_oid(&info->u._ec.params.id, &prkey->u.ec.params.id))
-					continue;
-		}
-		else if (alg == SC_ALGORITHM_EDDSA) {
-			if (!sc_valid_oid(&prkey->u.eddsa.params.id))
-				if (sc_pkcs15_fix_ec_parameters(ctx, &prkey->u.eddsa.params))
-					LOG_FUNC_RETURN(ctx, SC_ERROR_OBJECT_NOT_VALID);
-			if (sc_valid_oid(&info->u._ec.params.id))
-				if (!sc_compare_oid(&info->u._ec.params.id, &prkey->u.eddsa.params.id))
-					continue;
-		}
-		else if (alg == SC_ALGORITHM_XEDDSA) {
-			if (!sc_valid_oid(&prkey->u.eddsa.params.id))
-				if (sc_pkcs15_fix_ec_parameters(ctx, &prkey->u.eddsa.params))
-					LOG_FUNC_RETURN(ctx, SC_ERROR_OBJECT_NOT_VALID);
-			if (sc_valid_oid(&info->u._ec.params.id))
-				if (!sc_compare_oid(&info->u._ec.params.id, &prkey->u.eddsa.params.id))
 					continue;
 		}
 
