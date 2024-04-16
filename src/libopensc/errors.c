@@ -73,7 +73,8 @@ const char *sc_strerror(int error)
 		"Not enough memory on card",
 		"Part of returned data may be corrupted",
 		"End of file/record reached before reading Le bytes",
-		"Reference data not usable"
+		"Reference data not usable",
+		"Card blacklisted in opensc.conf or should not be probed again"
 	};
 	const unsigned int card_base = -SC_ERROR_CARD_CMD_FAILED;
 

@@ -369,6 +369,8 @@ int sc_connect_card(sc_reader_t *reader, sc_card_t **card_out)
 	}
 	if (card->driver == NULL) {
 		sc_log(ctx, "unable to find driver for inserted card");
+		/* TODO mark as blacklisted, and add atr to blacklisted driver atr map
+		 * and assign the blacklisted driver?  so looks like no card present? */
 		r = SC_ERROR_INVALID_CARD;
 		goto err;
 	}

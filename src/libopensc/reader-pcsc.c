@@ -393,6 +393,7 @@ static int refresh_attributes(sc_reader_t *reader)
 #endif
 				|| rv == (LONG)SCARD_E_SERVICE_STOPPED) {
  			reader->flags &= ~(SC_READER_CARD_PRESENT);
+			reader->flags &= ~(SC_READER_CARD_BLACKLISTED);
 			reader->flags |= SC_READER_REMOVED;
 			priv->gpriv->removed_reader = reader;
  			SC_FUNC_RETURN(reader->ctx, SC_LOG_DEBUG_VERBOSE, SC_SUCCESS);
@@ -413,6 +414,7 @@ static int refresh_attributes(sc_reader_t *reader)
 		 * XXX: We'll hit it again, as no readers are removed currently.
 		 */
 		reader->flags &= ~(SC_READER_CARD_PRESENT);
+		reader->flags &= ~(SC_READER_CARD_BLACKLISTED);
 		sc_log(reader->ctx, "Reader unknown: %s", sc_strerror(SC_ERROR_READER_DETACHED));
 		SC_FUNC_RETURN(reader->ctx, SC_LOG_DEBUG_VERBOSE, SC_SUCCESS);
 	}
@@ -457,9 +459,11 @@ static int refresh_attributes(sc_reader_t *reader)
 		}
 	} else {
 		reader->flags &= ~SC_READER_CARD_PRESENT;
+		reader->flags &= ~SC_READER_CARD_BLACKLISTED;
 	}
-	sc_log(reader->ctx, "card %s%s",
+	sc_log(reader->ctx, "card %s%s%s",
 			reader->flags & SC_READER_CARD_PRESENT ? "present" : "absent",
+			reader->flags & SC_READER_CARD_BLACKLISTED ? "blacklisted" : "",
 			reader->flags & SC_READER_CARD_CHANGED ? ", changed": "");
 
 	return SC_SUCCESS;
@@ -767,6 +771,13 @@ static int pcsc_reset(sc_reader_t *reader, int do_cold_reset)
 #ifndef HAVE_PCSCLITE
 	struct pcsc_private_data *priv = reader->drv_data;
 	int old_locked = priv->locked;
+#endif
+
+#ifdef HAVE_PCSCLITE
+	if (do_cold_reset == SC_READER_CARD_BLACKLISTED) {
+		reader->flags |= SC_READER_CARD_BLACKLISTED;
+		return 0;
+	}
 #endif
 
 	r = pcsc_reconnect(reader, do_cold_reset ? SCARD_UNPOWER_CARD : SCARD_RESET_CARD);

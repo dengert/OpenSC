@@ -103,6 +103,10 @@ struct _sc_driver_entry {
 
 // clang-format off
 static const struct _sc_driver_entry internal_card_drivers[] = {
+	/* The blacklist driver should be first, as it handles cards marked as blacklisted
+	 * in opensc.conf or not recognized by other drivers and not handled by default
+	 * driver especially when using PKCS11 to prevent probing these cards */
+	{ "blacklist",	(void *(*)(void)) sc_get_blacklist_driver },
 	/* The card handled by skeid shares the ATR with other cards running CardOS 5.4.
 	 * In order to prevent the cardos driver from matching skeid cards, skeid driver
 	 * precedes cardos and matches no other CardOS 5.4 card. */
@@ -165,7 +169,7 @@ static const struct _sc_driver_entry internal_card_drivers[] = {
 #if defined(ENABLE_SM) && defined(ENABLE_OPENPACE)
 	{ "eOI",	(void *(*)(void)) sc_get_eoi_driver },
 #endif
-	/* The default driver should be last, as it handles all the
+	/* The default driver should be last, as it handle all the
 	 * unrecognized cards. */
 	{ "default",	(void *(*)(void)) sc_get_default_driver },
 	{ NULL, NULL }

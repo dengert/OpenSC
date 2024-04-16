@@ -311,6 +311,7 @@ extern sc_card_driver_t *sc_get_nqApplet_driver(void);
 extern sc_card_driver_t *sc_get_skeid_driver(void);
 extern sc_card_driver_t *sc_get_eoi_driver(void);
 extern sc_card_driver_t *sc_get_dtrust_driver(void);
+extern sc_card_driver_t *sc_get_blacklist_driver(void);
 
 #ifdef __cplusplus
 }

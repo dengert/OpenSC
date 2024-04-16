@@ -345,6 +345,7 @@ int sc_detect_card_presence(sc_reader_t *reader)
 
 	// Check that we get sane return value from backend
 	// detect_card_presence should return 0 if no card is present.
+	/* TODO check SC_READER_CARD_NOT_RECOGNIZED or check ATR here, and set reader flag */
 	if (r && !(r & SC_READER_CARD_PRESENT))
 		LOG_FUNC_RETURN(reader->ctx, SC_ERROR_INTERNAL);
 
