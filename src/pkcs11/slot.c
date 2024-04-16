@@ -230,6 +230,14 @@ again:
 		return CKR_TOKEN_NOT_PRESENT;
 	}
 
+	if (rc & SC_READER_CARD_BLACKLISTED) {
+		sc_log(context, "%s: token (blacklisted) not recognized", reader->name);
+		/* TODO ? but do not remove so slot shows card is still present */
+		/* TODO need to see what pkcs11 apps do with CKR_TOKEN_NOT_RECOGNIZED */
+		/* or do we make slot with unknown card */
+		return CKR_TOKEN_NOT_RECOGNIZED;
+	}
+
 	/* If the card was changed, disconnect the current one */
 	if (rc & SC_READER_CARD_CHANGED) {
 		sc_log(context, "%s: Card changed", reader->name);
@@ -479,9 +487,11 @@ CK_RV slot_get_token(CK_SLOT_ID id, struct sc_pkcs11_slot ** slot)
 			return CKR_TOKEN_NOT_PRESENT;
 		sc_log(context, "Slot(id=0x%lX): get token: now detect card", id);
 		rv = card_detect((*slot)->reader);
+	/* TODO test SC_READER_CARD_NOT_RECOGNIZED return  CKR_TOKEN_NOT_RECOGNIZED */
 		if (rv != CKR_OK)
 			return rv;
 	}
+
 
 	if (!((*slot)->slot_info.flags & CKF_TOKEN_PRESENT)) {
 		sc_log(context, "card detected, but slot not presenting token");

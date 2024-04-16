@@ -118,6 +118,8 @@ static CK_RV sc_to_cryptoki_error_common(int rc)
 		return CKR_DEVICE_ERROR;
 	case SC_ERROR_WRONG_PADDING:
 		return CKR_ENCRYPTED_DATA_INVALID;
+	case SC_ERROR_CARD_BLACKLISTED:
+		return CKR_TOKEN_NOT_RECOGNIZED;
 	}
 	return CKR_GENERAL_ERROR;
 }
