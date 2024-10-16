@@ -109,7 +109,7 @@ extern CK_FUNCTION_LIST_3_0 pkcs11_function_list_3_0;
 /* EC, Edwards and Montgomery curves understood by pkcs11-tool */
 static struct ec_curve_info {
 	const char *name;	  /* common name of curve */
-	const char *oid;	  /* formated printable OID */
+	const char *oid;	  /* formatted printable OID */
 	unsigned char *ec_params; /* der of OID or printable string */
 	size_t ec_params_size;
 	size_t size; /* field_size in bits */
