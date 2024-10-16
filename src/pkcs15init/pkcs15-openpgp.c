@@ -171,7 +171,7 @@ static int openpgp_store_key(sc_profile_t *profile, sc_pkcs15_card_t *p15card,
 	sc_pkcs15_object_t *obj, sc_pkcs15_prkey_t *key)
 {
 	/* Maybe called internally to write public key because PKCS11 stores 
-	 * private and public keyis in seperate operations. In this case
+	 * private and public keyis in separate operations. In this case
 	 * the object will have a type of SC_PKCS15_TYPE_PUBLIC_*
 	 * and key will be sc_pkcs15_pubkey_t
 	 */
@@ -539,7 +539,7 @@ static int openpgp_store_data(struct sc_pkcs15_card *p15card, struct sc_profile 
 	sc_pkcs15_id_t *cid;
 	sc_pkcs15_data_info_t *dinfo;
 	u8 buf[254];
-	int r;
+	int r = 0;
 	sc_pkcs15_pubkey_t *pubkey = NULL;
 
 
