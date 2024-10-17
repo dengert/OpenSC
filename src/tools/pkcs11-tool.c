@@ -4625,10 +4625,6 @@ static CK_RV write_object(CK_SESSION_HANDLE session)
 		n_privkey_attr++;
 		FILL_ATTR(privkey_templ[n_privkey_attr], CKA_SENSITIVE, &_true, sizeof(_true));
 		n_privkey_attr++;
-#ifdef ENABLE_OPENSSL
-		FILL_ATTR(privkey_templ[n_privkey_attr], CKA_EC_PARAMS, gost.param_oid.value, gost.param_oid.len);
-		n_privkey_attr++;
-#endif
 		if (opt_object_label != NULL) {
 			FILL_ATTR(privkey_templ[n_privkey_attr], CKA_LABEL, opt_object_label, strlen(opt_object_label));
 			n_privkey_attr++;
