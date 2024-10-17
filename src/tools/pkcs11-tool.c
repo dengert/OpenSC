@@ -235,7 +235,8 @@ enum {
 	OPT_AAD,
 	OPT_TAG_BITS,
 	OPT_SALT_FILE,
-	OPT_INFO_FILE
+	OPT_INFO_FILE,
+	OPT_PUBLIC_KEY_INFO
 };
 
 // clang-format off
@@ -328,6 +329,7 @@ static const struct option options[] = {
 	{ "tag-bits-len", 	1, NULL, 		OPT_TAG_BITS},
 	{ "salt-file", 		1, NULL,		OPT_SALT_FILE},
 	{ "info-file",		1, NULL,		OPT_INFO_FILE},
+	{ "public-key-info",	0, NULL,		OPT_PUBLIC_KEY_INFO},
 
 	{ NULL, 0, NULL, 0 }
 };
@@ -486,6 +488,7 @@ static const char *opt_aad = NULL;
 static unsigned long opt_tag_bits = 0;
 static const char *opt_salt_file = NULL;
 static const char *opt_info_file = NULL;
+static int		opt_public_key_info = 0;  /* return pubkey as SPKI DER */
 
 static void *module = NULL;
 static CK_FUNCTION_LIST_3_0_PTR p11 = NULL;
@@ -1214,6 +1217,9 @@ int main(int argc, char * argv[])
 			break;
 		case OPT_INFO_FILE:
 			opt_info_file = optarg;
+			break;
+		case OPT_PUBLIC_KEY_INFO:
+			opt_public_key_info = 1;
 			break;
 		default:
 			util_print_usage_and_die(app_name, options, option_help, NULL);
@@ -6359,9 +6365,16 @@ static int read_object(CK_SESSION_HANDLE session)
 	}
 	if (clazz == CKO_PUBLIC_KEY) {
 		/* If module supports CKA_PUBLIC_KEY_INFO which is DER of SPKI 
-		 * retuen whatever the module provides including ED448 and X448 
+		 * return whatever the module provides including ED448 and X448 
 		 */
-		value = getPUBLIC_KEY_INFO(session, obj, &len);
+		if (opt_public_key_info)
+			value = getPUBLIC_KEY_INFO(session, obj, &len);
+		/* softhsm2 may return length 0 and varattr may allocate memory treat as invalid */
+		if (value && len == 0) {
+			p11_warn("getPUBLIC_KEY_INFO returned a value of length 0",0);
+			free(value);
+			value = NULL;
+		}
 		if (value == NULL) { /* Do the old way */
 #ifdef ENABLE_OPENSSL
 			long derlen;
