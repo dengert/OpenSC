@@ -226,7 +226,7 @@ static int openpgp_store_key(sc_profile_t *profile, sc_pkcs15_card_t *p15card,
 		break;
 
 		/* Unlike RSA which includes modulus in privkey, 
-		 * PKCS11 stores pubkey as seperate operation
+		 * PKCS11 stores pubkey as separate operation
 		 */
 	case SC_PKCS15_TYPE_PUBKEY_EC:
 	case SC_PKCS15_TYPE_PUBKEY_EDDSA:
