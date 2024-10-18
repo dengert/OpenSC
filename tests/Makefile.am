@@ -55,6 +55,5 @@ TESTS += test-p11test.sh
 endif
 endif
 endif
-XFAIL_TESTS = \
-        test-pkcs11-tool-test-threads.sh \
-        test-pkcs11-tool-test.sh
+# no tests expectd to fail
+#XFAIL_TESTS =
