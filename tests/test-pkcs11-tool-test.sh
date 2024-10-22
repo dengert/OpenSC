@@ -50,9 +50,11 @@ if [[ -f "$OPENSC_TOOL" ]] ; then
 		assert $? "Failed running slots URI tests"
 	else
 		echo "Skipping URI tests because no token found"
+		exit 77
 	fi
 else
 	echo "Skipping URI tests because because opensc-tool not found"
+	exit 77
 fi
 
 echo "======================================================="
