@@ -13,6 +13,32 @@ if [ ! -d "$V" ]; then
 	tar xzf $V.tar.gz
 
 	pushd $V
+#add patch here
+patch << EOF
+--- ./crypto/rsa/,rsa_pmeth.c	2025-01-15 09:47:34.808429739 -0600
++++ ./crypto/rsa/rsa_pmeth.c	2025-01-15 10:36:55.859764137 -0600
+@@ -61,6 +61,10 @@
+ #include <stdlib.h>
+ #include <string.h>
+
++#include <execinfo.h>
++#include <stdio.h>
++#include <stdlib.h>
++
+ #include <openssl/opensslconf.h>
+
+ #include <openssl/asn1t.h>
+@@ -670,6 +674,9 @@
+ 		else {
+ 			saltlen = strtonum(value, 0, INT_MAX, &errstr);
+ 			if (errstr != NULL) {
++				fprintf(stderr, "DEE sizeof(saltlen):%ld\n", sizeof(saltlen));
++				fprintf(stderr, "DEE strlen(value):%ld\n", strlen(value));
++				fprintf(stderr, "DEE error value:\"%s\" errstr:\"%s\"\n", value, (errstr)?errstr:"NULL");
+ 				RSAerror(RSA_R_INVALID_PSS_SALTLEN);
+ 				return -2;
+ 			}
+EOF
 	./configure --prefix=/usr/local
 	make -j $(nproc)
 	popd
