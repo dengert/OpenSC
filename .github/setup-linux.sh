@@ -89,12 +89,16 @@ deb http://ddebs.ubuntu.com $(lsb_release -cs 2> /dev/null)-updates main restric
 deb http://ddebs.ubuntu.com $(lsb_release -cs 2> /dev/null)-proposed main restricted universe multiverse" | \
 	$SUDO tee -a /etc/apt/sources.list.d/ddebs.list
 	$SUDO apt-get update -qq
-	DEP="libssl1.1-dbgsym"
+	#DEP="libssl1.1-dbgsym"
+	DEP=`apt-cache depends openssl | grep 'libssl' | sed -e 's/^.*libssl/libssl/'`-dbgsym
+	echo "DEP using apt-cache depends openssl: 
 	if [ -f "/usr/lib/x86_64-linux-gnu/libssl.so.3" ]; then
 #		libcrypto is in same package as libssl
 		DEPX=`dpkg -S "/usr/lib/x86_64-linux-gnu/libssl.so.3"`
 		DEP="${DEPX%%:*}-dbgsym"
+		echo "DEP linking in /usr/lib/x86_64-linux-gnu dir:$DEP"
 	fi
+	
 	$SUDO apt-get install -y openssl-dbgsym "$DEP" softhsm2-dbgsym libsofthsm2-dbgsym
 fi
 
