@@ -30,8 +30,8 @@
 #include "cardctl.h"
 #include "types.h"
 
-/* TODO May want to  replace ENABLE_PIV_SM with ENBLE_MYEID_SM
- * to turn off seprate from  card-piv.c
+/* TODO May want to replace ENABLE_PIV_SM with ENBLE_MYEID_SM
+ * to turn off seprate from card-piv.c
  */
 #if defined(ENABLE_PIV_SM) && defined(ENABLE_SM_NIST)
 #define PIV_SM_NIST
