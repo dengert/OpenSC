@@ -31,7 +31,7 @@
 #include "types.h"
 
 /* TODO May want to replace ENABLE_PIV_SM with ENBLE_MYEID_SM
- * to turn off seprate from card-piv.c
+ * to turn off separate from card-piv.c
  */
 #if defined(ENABLE_PIV_SM) && defined(ENABLE_SM_NIST)
 #define PIV_SM_NIST
@@ -70,6 +70,13 @@
 
 #define MYEID_MAX_EXT_APDU_BUFFER_SIZE	(MYEID_MAX_RSA_KEY_LEN/8+16)
 
+#define MYEID_INIT_IN_READER_LOCK_OBTAINED        0x00000010u
+enum {
+DRIVER_STATE_NORMAL = 0,
+DRIVER_STATE_MATCH,
+DRIVER_STATE_INIT
+};
+
 static const char *myeid_card_name = "MyEID";
 static const char *oseid_card_name = "OsEID";
 static char card_name_buf[MYEID_CARD_NAME_MAX_LEN];
@@ -106,6 +113,8 @@ typedef struct myeid_private_data {
 	sm_nist_params_t sm_params;
 #endif /* PIV_SM_NIST */
 	unsigned short set_session_flags;
+	int driver_state;
+	unsigned int init_flags;
 } myeid_private_data_t;
 
 typedef struct myeid_card_caps {
@@ -129,6 +138,8 @@ static struct myeid_supported_ec_curves {
 	{"secp521r1", {{1, 3, 132, 0, 35, -1}},		521},
 	{NULL, {{-1}}, 0},
 };
+
+static struct sc_aid myeid_aid = { "\xA0\x00\x00\x00\x63\x50\x4B\x43\x53\x2D\x31\x35", 0x0C };
 
 static int myeid_get_info(struct sc_card *card, u8 *rbuf, size_t buflen);
 static int myeid_get_card_caps(struct sc_card *card, myeid_card_caps_t* card_caps);
@@ -327,6 +338,59 @@ err:
 	return r;
 }
 
+static int myeid_card_reader_lock_obtained(sc_card_t *card, int was_reset)
+{
+	int r = 0;
+	myeid_private_data_t *priv = (myeid_private_data_t *)card->drv_data;
+
+	SC_FUNC_CALLED(card->ctx, SC_LOG_DEBUG_VERBOSE);
+
+	/* We have a PCSC transaction and sc_lock */
+	/* note myeid_init will hold a lock till it is done */
+	if (priv == NULL || priv->driver_state == DRIVER_STATE_MATCH) {
+		sc_debug(card->ctx, SC_LOG_DEBUG_VERBOSE,
+			priv ? "DRIVER_STATE_MATCH" : "priv==NULL");
+		r = 0; /* do nothing, piv_match will take care of it */
+		goto err;
+	}
+
+	priv->init_flags |= MYEID_INIT_IN_READER_LOCK_OBTAINED;
+
+	/* Ensure that the MyEID applet is selected. */
+	r = iso7816_select_aid(card, myeid_aid.value, myeid_aid.len, NULL, NULL);
+		LOG_TEST_GOTO_ERR(card->ctx, r, "Failed to select MyEID applet.");
+
+#ifdef PIV_SM_NIST
+		/*
+		 * If read with SM and fails with 69 88  SC_ERROR_SM_INVALID_SESSION_KEY
+		 * sm.c will close the SM connectrion, and set defer
+		 */
+		if (was_reset == 0 &&
+			(r == SC_ERROR_SM_INVALID_SESSION_KEY || priv->sm_params.flags & PIV_SM_FLAGS_DEFER_OPEN)) {
+			sc_log(card->ctx,"SC_ERROR_SM_INVALID_SESSION_KEY || PIV_SM_FLAGS_DEFER_OPEN");
+		/* TODO  20230916 - need to tell sm-nist.c to do piv_sm_open */
+}
+#endif /* PIV_SM_NIST */
+		if (r < 0) {
+			if (was_reset > 0) {
+				/* TRY again SM may have been reestablished */
+				r = iso7816_select_aid(card, myeid_aid.value, myeid_aid.len, NULL, NULL);
+				sc_debug(card->ctx, SC_LOG_DEBUG_MATCH, "iso7816_select_aid card->type:%d r:%d\n", card->type, r);
+			} else {
+				r = 0; /* can't do anything with this card, hope there was no interference */
+			}
+		}
+
+		if (r < 0) /* bad error return will show up in sc_lock as error*/
+			goto err;
+	r = 0;
+err:
+	if (priv)
+		priv->init_flags &= ~MYEID_INIT_IN_READER_LOCK_OBTAINED;
+	LOG_FUNC_RETURN(card->ctx, r);
+}
+
+
 static int myeid_init(struct sc_card *card)
 {
 	unsigned long flags = 0, ext_flags = 0;
@@ -334,7 +398,6 @@ static int myeid_init(struct sc_card *card)
 	u8 appletInfo[20];
 	size_t appletInfoLen;
 	myeid_card_caps_t card_caps;
-	static struct sc_aid myeid_aid = { "\xA0\x00\x00\x00\x63\x50\x4B\x43\x53\x2D\x31\x35", 0x0C };
 	int rv = 0;
 	void *old_drv_data = card->drv_data;
 
@@ -355,6 +418,10 @@ static int myeid_init(struct sc_card *card)
 
 	if (!priv)
 		LOG_FUNC_RETURN(card->ctx, SC_ERROR_OUT_OF_MEMORY);
+
+	rv = sc_lock(card); /* hold until match or init is complete */
+	LOG_TEST_GOTO_ERR(card->ctx, rv, "sc_lock failed");
+	priv->driver_state = DRIVER_STATE_INIT;
 
 	rv = myeid_load_options (card->ctx, priv);
 	LOG_TEST_GOTO_ERR(card->ctx, rv, "Unable to read options from opensc.conf");
@@ -469,9 +536,14 @@ static int myeid_init(struct sc_card *card)
 	}
 #endif
 
+	priv->driver_state = DRIVER_STATE_NORMAL;
+	sc_unlock(card);
 	rv = SC_SUCCESS;
 
 err:
+	if  (priv && priv->driver_state == DRIVER_STATE_INIT)
+		sc_unlock(card);
+
 	if (rv < 0) {
 		free(priv);
 		card->drv_data = old_drv_data;
@@ -2319,6 +2391,7 @@ static struct sc_card_driver * sc_get_driver(void)
 	myeid_ops.unwrap		= myeid_unwrap_key;
 	myeid_ops.encrypt_sym		= myeid_encrypt_sym;
 	myeid_ops.decrypt_sym		= myeid_decrypt_sym;
+	myeid_ops.card_reader_lock_obtained = myeid_card_reader_lock_obtained;
 	return &myeid_drv;
 }
 
