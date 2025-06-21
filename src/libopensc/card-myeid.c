@@ -34,9 +34,9 @@
  * to turn off separate from card-piv.c
  */
 #if defined(ENABLE_PIV_SM) && defined(ENABLE_SM_NIST)
-#define PIV_SM_NIST
+#define MYEID_SM_NIST
 #include "sm/sm-nist.h"
-#endif /* PIV_SM_NIST */
+#endif /* MYEID_SM_NIST */
 
 /* Low byte is the MyEID card's key type specific component ID. High byte is used
  * internally for key type, so myeid_loadkey() is aware of the exact component. */
@@ -109,9 +109,9 @@ typedef struct myeid_private_data {
 	uint8_t sym_plain_buffer_len;
 	/* PSO for AES/DES need algo+flags from sec env */
 	unsigned long algorithm, algorithm_flags;
-#ifdef PIV_SM_NIST
+#ifdef MYEID_SM_NIST
 	sm_nist_params_t sm_params;
-#endif /* PIV_SM_NIST */
+#endif /* MYEID_SM_NIST */
 	unsigned short set_session_flags;
 	int driver_state;
 	unsigned int init_flags;
@@ -179,7 +179,7 @@ end:
 	LOG_FUNC_RETURN(card->ctx, r);
 }
 
-#ifdef PIV_SM_NIST
+#ifdef MYEID_SM_NIST
 static int
 myeid_get_sm_cert_signer(struct sc_card *card, sc_path_t *path_cert_signer)
 {
@@ -268,11 +268,11 @@ myeid_setup_sm_nist(struct sc_card *card)
 	r = sc_read_binary(card, 0, priv->sm_params.signer_cert_der, priv->sm_params.signer_cert_der_len, 0);
 	SC_TEST_GOTO_ERR(card->ctx, SC_LOG_DEBUG_VERBOSE, r, "failed to read signer_cert_der");
 
-	priv->sm_params.flags = PIV_SM_FLAGS_SM_CERT_SIGNER_PRESENT;
+	priv->sm_params.flags = NIST_SM_FLAGS_SM_CERT_SIGNER_PRESENT;
 	/* TODO set other flags if needed, for now will say to always use SM */
-	priv->sm_params.flags |= PIV_SM_FLAGS_ALWAYS;
+	priv->sm_params.flags |= NIST_SM_FLAGS_ALWAYS;
 	/* TODO this implies card has reader_lock_obtained routine */
-	priv->sm_params.flags |= PIV_SM_FLAGS_DEFER_OPEN;
+	priv->sm_params.flags |= NIST_SM_FLAGS_DEFER_OPEN;
 	priv->sm_params.csID = 0x27;
 
 	r = sm_nist_start(card, &priv->sm_params);
@@ -287,7 +287,7 @@ err:
 	sc_file_free(file);
 	LOG_FUNC_RETURN(card->ctx, r);
 }
-#endif /* PIV_SM_NIST */
+#endif /* MYEID_SM_NIST */
 
 static int myeid_match_card(struct sc_card *card)
 {
@@ -360,29 +360,26 @@ static int myeid_card_reader_lock_obtained(sc_card_t *card, int was_reset)
 	r = iso7816_select_aid(card, myeid_aid.value, myeid_aid.len, NULL, NULL);
 		LOG_TEST_GOTO_ERR(card->ctx, r, "Failed to select MyEID applet.");
 
-#ifdef PIV_SM_NIST
-		/*
-		 * If read with SM and fails with 69 88  SC_ERROR_SM_INVALID_SESSION_KEY
-		 * sm.c will close the SM connectrion, and set defer
-		 */
-		if (was_reset == 0 &&
-			(r == SC_ERROR_SM_INVALID_SESSION_KEY || priv->sm_params.flags & PIV_SM_FLAGS_DEFER_OPEN)) {
-			sc_log(card->ctx,"SC_ERROR_SM_INVALID_SESSION_KEY || PIV_SM_FLAGS_DEFER_OPEN");
-		/* TODO  20230916 - need to tell sm-nist.c to do piv_sm_open */
-}
-#endif /* PIV_SM_NIST */
+#ifdef MYEID_SM_NIST
+	sc_log(card->ctx, "(was_reset: %d priv->sm_parms.flags: 0x%08lX", was_reset, priv->sm_params.flags);
+	/* If SM was active, reauthenticate as other process may be using SM too. */
+
+	if (priv->sm_params.flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
+		priv->sm_params.flags |= NIST_SM_FLAGS_DEFER_OPEN;
+		r = sm_nist_open(card);
 		if (r < 0) {
-			if (was_reset > 0) {
-				/* TRY again SM may have been reestablished */
-				r = iso7816_select_aid(card, myeid_aid.value, myeid_aid.len, NULL, NULL);
-				sc_debug(card->ctx, SC_LOG_DEBUG_MATCH, "iso7816_select_aid card->type:%d r:%d\n", card->type, r);
-			} else {
-				r = 0; /* can't do anything with this card, hope there was no interference */
+			/* If user said use SM always and SM failed - Error */
+			sc_log(card->ctx, "Attempt to restart or skip sm-nist");
+			if (priv->sm_params.flags & NIST_SM_FLAGS_ALWAYS) {
+				r = SC_ERROR_SM_NOT_INITIALIZED;
+				goto err;
 			}
 		}
+	}
+#endif /* MYEID_SM_NIST */
 
-		if (r < 0) /* bad error return will show up in sc_lock as error*/
-			goto err;
+	if (r < 0) /* bad error return will show up in sc_lock as error*/
+		goto err;
 	r = 0;
 err:
 	if (priv)
@@ -419,15 +416,16 @@ static int myeid_init(struct sc_card *card)
 	if (!priv)
 		LOG_FUNC_RETURN(card->ctx, SC_ERROR_OUT_OF_MEMORY);
 
+	card->drv_data = priv;
+
+	priv->driver_state = DRIVER_STATE_INIT;
 	rv = sc_lock(card); /* hold until match or init is complete */
 	LOG_TEST_GOTO_ERR(card->ctx, rv, "sc_lock failed");
-	priv->driver_state = DRIVER_STATE_INIT;
 
 	rv = myeid_load_options (card->ctx, priv);
 	LOG_TEST_GOTO_ERR(card->ctx, rv, "Unable to read options from opensc.conf");
 
 	priv->card_state = SC_FILE_STATUS_CREATION;
-	card->drv_data = priv;
 
 	/* Ensure that the MyEID applet is selected. */
 	rv = iso7816_select_aid(card, myeid_aid.value, myeid_aid.len, NULL, NULL);
@@ -530,7 +528,7 @@ static int myeid_init(struct sc_card *card)
 	}
 
 	/* TODO DEE for now use chaining vs extended */
-#ifdef PIV_SM_NIST
+#ifdef MYEID_SM_NIST
 	if (card_caps.card_supported_features & MYEID_CARD_CAP_PIV_EMU) {
 		rv = myeid_setup_sm_nist(card);
 	}
@@ -2103,7 +2101,7 @@ static int myeid_finish(sc_card_t * card)
 {
 	struct myeid_private_data *priv = (struct myeid_private_data *) card->drv_data;
 
-#ifdef PIV_SM_NIST
+#ifdef MYEID_SM_NIST
 	/* TODO may need to cleanup sm */
 	sm_nist_params_cleanup(&priv->sm_params);
 #endif
