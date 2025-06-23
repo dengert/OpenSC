@@ -4522,6 +4522,9 @@ static int piv_card_reader_lock_obtained(sc_card_t *card, int was_reset)
 
 	if (was_reset > 0)
 		priv->logged_in = SC_PIN_STATE_UNKNOWN;
+	
+	if (r < 0)
+		goto err;
 
 	if (r < 0)
 		goto err;
