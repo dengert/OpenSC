@@ -155,6 +155,7 @@ static struct profile_operations {
 	{ "rutoken_ecp", (void *) sc_pkcs15init_get_rtecp_ops },
 	{ "rutoken_lite", (void *) sc_pkcs15init_get_rtecp_ops },
 	{ "myeid", (void *) sc_pkcs15init_get_myeid_ops },
+	{ "oseid", (void *) sc_pkcs15init_get_myeid_ops },
 	{ "sc-hsm", (void *) sc_pkcs15init_get_sc_hsm_ops },
 	{ "isoApplet", (void *) sc_pkcs15init_get_isoApplet_ops },
 	{ "gids", (void *) sc_pkcs15init_get_gids_ops },
