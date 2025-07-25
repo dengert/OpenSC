@@ -259,6 +259,7 @@ struct sc_pkcs15_enveloped_data {
 };
 
 struct sc_pkcs15_cert {
+	int cert_type; /* SC_PKCS15_TYPE_CERT_* */
 	int version;
 	u8 *serial;
 	size_t serial_len;
@@ -277,6 +278,7 @@ struct sc_pkcs15_cert {
 typedef struct sc_pkcs15_cert sc_pkcs15_cert_t;
 
 struct sc_pkcs15_cert_info {
+	int cert_type; /* SC_PKCS15_TYPE_CERT_* */
 	struct sc_pkcs15_id id;	/* correlates to private key id */
 	int authority;		/* boolean */
 	/* identifiers [2] SEQUENCE OF CredentialIdentifier{{KeyIdentifiers}} */
@@ -436,8 +438,20 @@ typedef struct sc_pkcs15_skey_info sc_pkcs15_skey_info_t;
 #define SC_PKCS15_TYPE_SKEY_3DES		0x304
 
 #define SC_PKCS15_TYPE_CERT			0x400
+/*
+ * PKCS15 CertificateType ::= CHOICE {
+ * X509 does not have a context-specific tag
+ * the others have context-specific tags [0] to [5]
+ * X509_ATTR, SPKI, PGP, WTLS and X9_68 are not implemented
+ * PKCS11 does not define CKC_CVC
+ */
 #define SC_PKCS15_TYPE_CERT_X509		0x401
-#define SC_PKCS15_TYPE_CERT_SPKI		0x402
+#define SC_PKCS15_TYPE_CERT_X509_ATTR		0x402
+#define SC_PKCS15_TYPE_CERT_SPKI		0x403
+#define SC_PKCS15_TYPE_CERT_PGP			0x404
+#define SC_PKCS15_TYPE_CERT_WTLS		0x405
+#define SC_PKCS15_TYPE_CERT_X9_68		0x406
+#define SC_PKCS15_TYPE_CERT_CVC			0x407
 
 #define SC_PKCS15_TYPE_DATA_OBJECT		0x500
 
@@ -747,13 +761,14 @@ int sc_pkcs15_find_data_object_by_name(struct sc_pkcs15_card *p15card,
 void sc_pkcs15_free_data_object(struct sc_pkcs15_data *data_object);
 
 int sc_pkcs15_read_certificate(struct sc_pkcs15_card *card,
-			       const struct sc_pkcs15_cert_info *info,
+			       struct sc_pkcs15_cert_info *info,
 			       int private_obj,
 			       struct sc_pkcs15_cert **cert);
 void sc_pkcs15_free_certificate(struct sc_pkcs15_cert *cert);
 int sc_pkcs15_find_cert_by_id(struct sc_pkcs15_card *card,
 			      const struct sc_pkcs15_id *id,
 			      struct sc_pkcs15_object **out);
+int sc_pkcs15_find_cert_type(sc_context_t *ctx, const u8 *cert_value, size_t cert_len);
 int sc_pkcs15_get_name_from_dn(struct sc_context *ctx,
                               const u8 *dn, size_t dn_len,
                               const struct sc_object_id *type,
@@ -1028,6 +1043,8 @@ int sc_pkcs15emu_add_xeddsa_prkey(struct sc_pkcs15_card *,
 int sc_pkcs15emu_add_xeddsa_pubkey(struct sc_pkcs15_card *,
 	const struct sc_pkcs15_object *, const sc_pkcs15_pubkey_info_t *);
 int sc_pkcs15emu_add_x509_cert(struct sc_pkcs15_card *,
+	const struct sc_pkcs15_object *, const sc_pkcs15_cert_info_t *);
+int sc_pkcs15emu_add_CVC_cert(struct sc_pkcs15_card *,
 	const struct sc_pkcs15_object *, const sc_pkcs15_cert_info_t *);
 int sc_pkcs15emu_add_data_object(struct sc_pkcs15_card *,
 	const struct sc_pkcs15_object *, const sc_pkcs15_data_info_t *);
