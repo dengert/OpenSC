@@ -27,4 +27,7 @@
 
 /* PKCS11 does not define an unknown  CKK. Define one for internal OpenSC and pkcs11-tool.c */
 #define CKK_OPENSC_UNDEFINED (CKK_VENDOR_DEFINED | SC_VENDOR_DEFINED | 0xffUL)
+
+/* PKCS15  defines CVC certificates with ASN.1 context tag 5 but PKCS11 does not. */
+#define  CKC_CVC (CKC_VENDOR_DEFINED | SC_VENDOR_DEFINED  | 5UL)
 #endif
