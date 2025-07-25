@@ -181,7 +181,7 @@ end:
 
 #ifdef MYEID_SM_NIST
 static int
-myeid_get_sm_cert_signer(struct sc_card *card, sc_path_t *path_cert_signer)
+myeid_get_card_sm_params(struct sc_card *card, sc_path_t *path_cert_signer, u8 *csid)
 {
 	sc_apdu_t apdu;
 	int r = 0;
@@ -218,19 +218,31 @@ myeid_get_sm_cert_signer(struct sc_card *card, sc_path_t *path_cert_signer)
 		r = SC_ERROR_SM_NOT_INITIALIZED;
 		goto err;
 	}
-	/* Tag 0x80  L=2 is FID of Signer Certificate FID */
-	/* SM Signer cert is first 80 tag len 2 with path */
-	/* Tag 0x81 l=1  V=1 is Exclusize Pin Mode */
-	/* Tag A0 has 1 or 2 sub tags with 0x27 or 0x2E with FID of CVCs */
-	/* TODO assume 0x27 for now */
+	/*
+	 * Table 81 
+	 * Tag 0x80  L=2 is FID of Signer Certificate FID
+	 * SM Signer cert is first 80 tag len 2 with path
+	 * Tag 0x81 l=1  V=1 is Exclusize Pin Mode
+	 * Tag A0 has 1 or 2 sub tags with 0x27 or 0x2E with FID of CVCs
+	 * We only support the first one 
+	 * for example:with csid 0x27
+	 * 80 02 43 06 A0 0B 80 01 27 81 02 43 05 82 02 4B 05
+	 * The CVC certificate at path 4B 05 is provided as response to SM authenticate  
+	 */
 
-	if (apdu.resplen < 4 || apdu.resp[0] != 0x80 || apdu.resp[1] != 0x02) {
+	if (apdu.resplen < 17 || apdu.resp[0] != 0x80 || apdu.resp[1] != 0x02 || apdu.resp[4] != 0xA0) {
 		sc_log(card->ctx,  "Invalid response");
 		r = SC_ERROR_INVALID_ASN1_OBJECT;
 		goto err;
 	}
 	path_cert_signer->value[4] = apdu.resp[2];
 	path_cert_signer->value[5] = apdu.resp[3];
+	*csid = apdu.resp[8];
+	if (*csid != 0x27 || *csid != 0x2E) {
+		sc_log(card->ctx,  "csID invalid");
+		r = SC_ERROR_INVALID_ASN1_OBJECT;
+		goto err;
+	}
 	r = 0;
 
 err:
@@ -240,7 +252,6 @@ err:
 static int
 myeid_setup_sm_nist(struct sc_card *card)
 {
-
 	myeid_private_data_t *priv = (myeid_private_data_t *)card->drv_data;
 	struct sc_file *file = NULL;
 	sc_path_t path_cert_signer = {
@@ -248,11 +259,21 @@ myeid_setup_sm_nist(struct sc_card *card)
 			6, 0, 0, SC_PATH_TYPE_PATH, {{0}, 0}
 			};
 	int r = 0;
+	char *use_sm;
 
 	LOG_FUNC_CALLED(card->ctx);
 
-	r = myeid_get_sm_cert_signer(card, &path_cert_signer);
-	SC_TEST_GOTO_ERR(card->ctx, SC_LOG_DEBUG_VERBOSE, r, "cert_signer path not found");
+	/* TODO There are still problems with using sm-nist from myeid so use this for testing */
+	use_sm = getenv("MYEID_USE_SM");
+	if (use_sm == NULL || use_sm[0] == 'n') { /* no or never */
+		sc_log (card->ctx, "Not using SM");
+		LOG_FUNC_RETURN(card->ctx, 0);
+	}
+	if (use_sm[0] == 'a') /* always */
+		priv->sm_params.flags |= NIST_SM_FLAGS_ALWAYS;
+
+	r = myeid_get_card_sm_params(card, &path_cert_signer, &priv->sm_params.csID);
+	SC_TEST_GOTO_ERR(card->ctx, SC_LOG_DEBUG_VERBOSE, r, "sm params not found or invalid");
 
 	r = sc_select_file(card, &path_cert_signer, &file);
 	SC_TEST_GOTO_ERR(card->ctx, SC_LOG_DEBUG_VERBOSE, r, "cert_signer file not found");
@@ -269,15 +290,12 @@ myeid_setup_sm_nist(struct sc_card *card)
 	SC_TEST_GOTO_ERR(card->ctx, SC_LOG_DEBUG_VERBOSE, r, "failed to read signer_cert_der");
 
 	priv->sm_params.flags = NIST_SM_FLAGS_SM_CERT_SIGNER_PRESENT;
-	/* TODO set other flags if needed, for now will say to always use SM */
-	priv->sm_params.flags |= NIST_SM_FLAGS_ALWAYS;
 	/* TODO this implies card has reader_lock_obtained routine */
 	priv->sm_params.flags |= NIST_SM_FLAGS_DEFER_OPEN;
-	priv->sm_params.csID = 0x27;
 
 	r = sm_nist_start(card, &priv->sm_params);
 
-	SC_TEST_GOTO_ERR(card->ctx, SC_LOG_DEBUG_VERBOSE, r, "sm)nist_start failed");
+	SC_TEST_GOTO_ERR(card->ctx, SC_LOG_DEBUG_VERBOSE, r, "sm_nist_start failed");
 
 err:
 	if (r < 0) {
@@ -356,9 +374,11 @@ static int myeid_card_reader_lock_obtained(sc_card_t *card, int was_reset)
 
 	priv->init_flags |= MYEID_INIT_IN_READER_LOCK_OBTAINED;
 
+#if 0
 	/* Ensure that the MyEID applet is selected. */
 	r = iso7816_select_aid(card, myeid_aid.value, myeid_aid.len, NULL, NULL);
 		LOG_TEST_GOTO_ERR(card->ctx, r, "Failed to select MyEID applet.");
+#endif /* 0 */
 
 #ifdef MYEID_SM_NIST
 	sc_log(card->ctx, "(was_reset: %d priv->sm_parms.flags: 0x%08lX", was_reset, priv->sm_params.flags);
@@ -527,10 +547,15 @@ static int myeid_init(struct sc_card *card)
 		/* Ignore error if card is not in creation state */
 	}
 
-	/* TODO DEE for now use chaining vs extended */
 #ifdef MYEID_SM_NIST
-	if (card_caps.card_supported_features & MYEID_CARD_CAP_PIV_EMU) {
+	if (card_caps.card_supported_features & MYEID_CARD_CAP_PIV_EMU && (card->version.fw_major >= 49)) {
 		rv = myeid_setup_sm_nist(card);
+		/* treat SM as optional unless user said always */
+		if (rv < 0 && priv->sm_params.flags & NIST_SM_FLAGS_ALWAYS) {
+			sc_log(card->ctx, "failed to start SM and env MYEID_USE_SM=always");
+			rv = SC_ERROR_SM;
+			goto err;
+		}
 	}
 #endif
 
