@@ -188,6 +188,7 @@ enum {
 	OPT_APPLICATION_ID,
 	OPT_ISSUER,
 	OPT_SUBJECT,
+	OPT_CERT_TYPE,
 	OPT_SO_PIN,
 	OPT_INIT_TOKEN,
 	OPT_INIT_PIN,
@@ -292,6 +293,7 @@ static const struct option options[] = {
 	{ "issuer",		1, NULL,		OPT_ISSUER },
 	{ "subject",		1, NULL,		OPT_SUBJECT },
 	{ "type",		1, NULL,		'y' },
+	{ "cert-type",		1, NULL,		OPT_CERT_TYPE },
 	{ "id",			1, NULL,		'd' },
 	{ "label",		1, NULL,		'a' },
 	{ "slot",		1, NULL,		OPT_SLOT },
@@ -387,6 +389,7 @@ static const char *option_help[] = {
 		"Specify the issuer in hexadecimal format (use with --type cert)",
 		"Specify the subject in hexadecimal format (use with --type cert/privkey/pubkey)",
 		"Specify the type of object (e.g. cert, privkey, pubkey, secrkey, data)",
+		"Specify the type of cert 'x509' or 'cvc' (x509 is default when storing) (use with --type cert)",
 		"Specify the ID of the object",
 		"Specify the label of the object",
 		"Specify the ID of the slot to use (accepts HEX format with 0x.. prefix or decimal number)",
@@ -450,6 +453,7 @@ static int		opt_mechanism_used = 0;
 static const char *	opt_file_to_write = NULL;
 static const char *	opt_object_class_str = NULL;
 static CK_OBJECT_CLASS	opt_object_class = -1;
+static CK_CERTIFICATE_TYPE opt_cert_type = 0;
 static CK_BYTE		opt_object_id[100], new_object_id[100];
 static const char *	opt_attr_from_file = NULL;
 static size_t		opt_object_id_len = 0, new_object_id_len = 0;
@@ -922,6 +926,17 @@ int main(int argc, char * argv[])
 				opt_object_class = CKO_DATA;
 			else {
 				fprintf(stderr, "Unsupported object type \"%s\"\n", optarg);
+				util_print_usage_and_die(app_name, options, option_help, NULL);
+			}
+			break;
+		case OPT_CERT_TYPE:
+			if (strcmp(optarg, "x509") == 0)
+				opt_cert_type = CKC_X_509;
+			else if (strcmp(optarg, "cvc") == 0)
+				opt_cert_type = CKC_CVC; /* SC vendor defined */
+			else {
+				/* PKCS11 defines other types but not supported by OpenSC */
+				fprintf(stderr, "Unsupported cert type \"%s\"\n", optarg);
 				util_print_usage_and_die(app_name, options, option_help, NULL);
 			}
 			break;
@@ -4651,6 +4666,7 @@ static CK_RV write_object(CK_SESSION_HANDLE session)
 	size_t ret = 0;
 #ifdef ENABLE_OPENSSL
 	struct x509cert_info cert;
+	/* TODO what to use for CVC */
 	struct rsakey_info rsa;
 	struct gostkey_info gost;
 	EVP_PKEY *evp_key = NULL;
@@ -4703,7 +4719,14 @@ static CK_RV write_object(CK_SESSION_HANDLE session)
 		need_to_parse_certdata = 1;
 	}
 	if (opt_object_class == CKO_CERTIFICATE) {
-		if (opt_attr_from_file) {
+		/* if no cert_type set, default to writing x509 cert */
+		/* others are assumed to be DER */
+		if (opt_cert_type == 0)
+			cert_type = CKC_X_509;
+		else
+			cert_type = opt_cert_type;
+		
+		if (opt_attr_from_file && cert_type == CKC_X_509) {
 			/* Convert  contents  from PEM to DER if needed
 			 * certdata  already read and will be validated later
 			 */
@@ -4722,7 +4745,7 @@ static CK_RV write_object(CK_SESSION_HANDLE session)
 		}
 	}
 
-	if (need_to_parse_certdata) {
+	if (need_to_parse_certdata && cert_type == CKC_X_509) {
 #ifdef ENABLE_OPENSSL
 		/* Validate and get the certificate fields (from certdata)
 		 * and convert PEM to DER if needed
@@ -4776,7 +4799,6 @@ static CK_RV write_object(CK_SESSION_HANDLE session)
 	{
 	case CKO_CERTIFICATE:
 		clazz = CKO_CERTIFICATE;
-		cert_type = CKC_X_509;
 
 		FILL_ATTR(cert_templ[0], CKA_TOKEN, &_true, sizeof(_true));
 		FILL_ATTR(cert_templ[1], CKA_VALUE, contents, contents_len);
@@ -4802,7 +4824,7 @@ static CK_RV write_object(CK_SESSION_HANDLE session)
 			n_cert_attr++;
 		}
 #ifdef ENABLE_OPENSSL
-		/* according to PKCS #11 CKA_SUBJECT MUST be specified */
+		/* according to PKCS #11 X.509 CKA_SUBJECT MUST be specified */
 		FILL_ATTR(cert_templ[n_cert_attr], CKA_SUBJECT, cert.subject, cert.subject_len);
 		n_cert_attr++;
 		FILL_ATTR(cert_templ[n_cert_attr], CKA_ISSUER, cert.issuer, cert.issuer_len);
@@ -6341,6 +6363,9 @@ static void show_cert(CK_SESSION_HANDLE sess, CK_OBJECT_HANDLE obj)
 		break;
 	case CKC_X_509_ATTR_CERT:
 		printf("X.509 attribute cert\n");
+		break;
+	case CKC_CVC:
+		printf("CVC cert\n");
 		break;
 	case CKC_VENDOR_DEFINED:
 		printf("vendor defined\n");
