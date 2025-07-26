@@ -132,6 +132,7 @@ enum {
 	OPT_SECRKEY_ALGO,
 	OPT_PUBKEY_LABEL,
 	OPT_CERT_LABEL,
+	OPT_CERT_TYPE,
 	OPT_APPLICATION_NAME,
 	OPT_APPLICATION_ID,
 	OPT_PUK_ID,
@@ -190,6 +191,7 @@ const struct option	options[] = {
 	{ "secret-key-algorithm", required_argument, NULL,	OPT_SECRKEY_ALGO },
 	{ "public-key-label",	required_argument, NULL,	OPT_PUBKEY_LABEL },
 	{ "cert-label",		required_argument, NULL,	OPT_CERT_LABEL },
+	{ "cert-type",		required_argument, NULL,	OPT_CERT_TYPE },
 	{ "application-name",	required_argument, NULL,	OPT_APPLICATION_NAME },
 	{ "application-id",	required_argument, NULL,	OPT_APPLICATION_ID },
 	{ "aid",		required_argument, NULL,        OPT_BIND_TO_AID },
@@ -256,6 +258,7 @@ static const char *		option_help[] = {
 	"Specify secret key algorithm (use with --store-secret-key)",
 	"Specify public key label (use with --generate-key)",
 	"Specify user cert label (use with --store-private-key)",
+	"Specify user cert type: x509(=default) or cvc  (use with --store-certificate or --update-certificate)",
 	"Specify application name of data object (use with --store-data-object)",
 	"Specify application id of data object (use with --store-data-object)",
 	"Specify AID of the on-card PKCS#15 application to be binded to (in hexadecimal form)",
@@ -373,6 +376,7 @@ static char *			opt_puk_label = NULL;
 static char *			opt_pubkey_label = NULL;
 static char *			opt_secrkey_algo = NULL;
 static char *			opt_cert_label = NULL;
+static unsigned int		opt_cert_type = SC_PKCS15_TYPE_CERT_X509;
 static const char *		opt_pins[4];
 static char *			pins[4];
 static char *			opt_serial = NULL;
@@ -1324,7 +1328,10 @@ static int
 do_store_certificate(struct sc_profile *profile)
 {
 	struct sc_pkcs15init_certargs args;
+	unsigned char *data = NULL;
+	size_t	datalen;
 	X509	*cert = NULL;
+
 	int	r;
 
 	memset(&args, 0, sizeof(args));
@@ -1337,11 +1344,29 @@ do_store_certificate(struct sc_profile *profile)
 
 	args.label = (opt_cert_label != 0 ? opt_cert_label : opt_label);
 	args.authority = opt_authority;
+	args.type = opt_cert_type;
 
-	r = do_read_certificate(opt_infile, opt_format, &cert);
-	if (r >= 0)
-		r = do_convert_cert(&args.der_encoded, cert);
-	X509_free(cert);
+	/* der encoded cert can be non x509 or other type of certificate */
+	if (opt_format && strcasecmp(opt_format, "der") == 0) {
+		r = do_read_data_object(opt_infile, &data, &datalen, 0);
+		if (r >= 0) {
+			args.der_encoded.value = data;
+			args.der_encoded.len = datalen;
+		}
+	} else {
+		r = do_read_certificate(opt_infile, opt_format, &cert);
+		if (r >= 0)
+			r = do_convert_cert(&args.der_encoded, cert);
+		X509_free(cert);
+	}
+	/* intrinsic ID may  not work with non  X509 crtificates */
+	if (r >= 0 && opt_objectid == NULL) {
+		if (args.type != SC_PKCS15_TYPE_CERT_X509) {
+			fprintf(stderr, "Non X509 certificate requires --id option\n");
+			r = SC_ERROR_INVALID_ARGUMENTS;
+		}
+	}
+
 	if (r >= 0) {
 		r = sc_lock(g_p15card->card);
 		if (r < 0)
@@ -1449,7 +1474,10 @@ do_update_certificate(struct sc_profile *profile)
 		util_error("Couldn't find the cert with ID %s\n", opt_objectid);
 		return SC_ERROR_OBJECT_NOT_FOUND;
 	}
-
+	if (opt_cert_type == SC_PKCS15_TYPE_CERT_CVC) {
+		util_error("Update CVC certificate not implemented\n");
+		return SC_ERROR_NOT_IMPLEMENTED;
+	}
 	r = sc_lock(g_p15card->card);
 	if (r < 0)
 		return r;
@@ -2933,6 +2961,14 @@ handle_option(const struct option *opt)
 		break;
 	case OPT_CERT_LABEL:
 		opt_cert_label = optarg;
+		break;
+	case OPT_CERT_TYPE:
+		if (!strcasecmp(optarg, "x509"))
+			opt_cert_type = SC_PKCS15_TYPE_CERT_X509;
+		else if (!strcasecmp(optarg, "cvc"))
+			opt_cert_type = SC_PKCS15_TYPE_CERT_CVC;
+		else
+			util_print_usage_and_die(app_name, options, option_help, NULL);
 		break;
 	case OPT_VERIFY_PIN:
 		opt_verify_pin = 1;
