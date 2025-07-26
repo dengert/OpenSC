@@ -2168,17 +2168,25 @@ sc_pkcs15init_store_certificate(struct sc_pkcs15_card *p15card,
 	if (!label)
 		label = "Certificate";
 
-	r = sc_pkcs15init_select_intrinsic_id(p15card, profile, SC_PKCS15_TYPE_CERT_X509,
+	/* if user did not provide id */
+	if (args->id.len == 0) {
+		if (args->type == SC_PKCS15_TYPE_CERT_CVC) {
+			sc_log(ctx, "CVC certificate requires ID");
+			return SC_ERROR_INVALID_ARGUMENTS;
+		}
+		/* for now only X509 and CVC implemented */
+		r = sc_pkcs15init_select_intrinsic_id(p15card, profile, args->type,
 			&args->id, &args->der_encoded);
-	LOG_TEST_RET(ctx, r, "Get certificate 'intrinsic ID' error");
-	sc_log(ctx, "Cert(ID:%s) rv %i", sc_pkcs15_print_id(&args->id), r);
+			LOG_TEST_RET(ctx, r, "Get certificate 'intrinsic ID' error");
+		sc_log(ctx, "Cert(ID:%s) rv %i", sc_pkcs15_print_id(&args->id), r);
+	}
 
 	/* Select an ID if the user didn't specify one, otherwise make sure it's unique */
-	r = select_id(p15card, SC_PKCS15_TYPE_CERT, &args->id);
-	if (r == SC_ERROR_NON_UNIQUE_ID && args->update)   {
+	r = select_id(p15card, args->type, &args->id);
+	if (r == SC_ERROR_NON_UNIQUE_ID && args->update) {
 		struct sc_pkcs15_object *existing_obj = NULL;
 
-		r = sc_pkcs15_find_object_by_id(p15card, SC_PKCS15_TYPE_CERT, &args->id, &existing_obj);
+		r = sc_pkcs15_find_object_by_id(p15card, args->type, &args->id, &existing_obj);
 		if (!r)   {
 			sc_log(ctx, "Found cert(ID:%s)", sc_pkcs15_print_id(&args->id));
 			existing_path = ((struct sc_pkcs15_cert_info *)existing_obj->data)->path;
@@ -2187,12 +2195,13 @@ sc_pkcs15init_store_certificate(struct sc_pkcs15_card *p15card,
 			sc_pkcs15_free_object(existing_obj);
 		}
 
-		r = select_id(p15card, SC_PKCS15_TYPE_CERT, &args->id);
+		r = select_id(p15card, args->type, &args->id);
 	}
 	sc_log(ctx, "Select ID Cert(ID:%s) rv %i", sc_pkcs15_print_id(&args->id), r);
 	LOG_TEST_RET(ctx, r, "Select certificate ID error");
 
-	object = sc_pkcs15init_new_object(SC_PKCS15_TYPE_CERT_X509, label, NULL, NULL);
+	object = sc_pkcs15init_new_object(args->type, label, NULL, NULL);
+
 	if (object == NULL)
 		LOG_TEST_RET(ctx, SC_ERROR_OUT_OF_MEMORY, "Failed to allocate certificate object");
 	cert_info = (struct sc_pkcs15_cert_info *) object->data;
@@ -2206,8 +2215,8 @@ sc_pkcs15init_store_certificate(struct sc_pkcs15_card *p15card,
 		cert_info->path = existing_path;
 	}
 
-	sc_log(ctx, "Store cert(%.*s,ID:%s,der(%p,%"SC_FORMAT_LEN_SIZE_T"u))",
-	       (int) sizeof object->label, object->label,
+	sc_log(ctx, "Store cert(type:0x%X, %.*s,ID:%s,der(%p,%"SC_FORMAT_LEN_SIZE_T"u))",
+	       args->type, (int) sizeof object->label, object->label,
 	       sc_pkcs15_print_id(&cert_info->id), args->der_encoded.value,
 	       args->der_encoded.len);
 
