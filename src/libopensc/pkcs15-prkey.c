@@ -495,36 +495,44 @@ sc_pkcs15_prkey_attrs_from_cert(struct sc_pkcs15_card *p15card, struct sc_pkcs15
 
 	sc_log(ctx, "CertValue(%"SC_FORMAT_LEN_SIZE_T"u) %p",
 	       cert_object->content.len, cert_object->content.value);
-	mem = BIO_new_mem_buf(cert_object->content.value, (int)cert_object->content.len);
-	if (!mem) {
-		sc_log_openssl(ctx);
-		LOG_TEST_RET(ctx, SC_ERROR_INTERNAL, "MEM buffer allocation error");
-	}
+	       
+	/* the cert maybe not be x509. Only use OpenSSL if x509.
+	 * TODO why not use OpenSC parse x509 routines?
+	 */
+	rv = sc_pkcs15_find_cert_type(ctx, cert_object->content.value, (int)cert_object->content.len);
 
-	x = d2i_X509_bio(mem, NULL);
-	if (!x) {
-		sc_log_openssl(ctx);
-		LOG_TEST_RET(ctx, SC_ERROR_INTERNAL, "x509 parse error");
-	}
-	buff = OPENSSL_malloc(i2d_X509(x,NULL) + EVP_MAX_MD_SIZE);
-	if (!buff) {
-		sc_log_openssl(ctx);
-		LOG_TEST_RET(ctx, SC_ERROR_OUT_OF_MEMORY, "OpenSSL allocation error");
-	}
+	if (rv == SC_PKCS15_TYPE_CERT_X509) {
+		mem = BIO_new_mem_buf(cert_object->content.value, (int)cert_object->content.len);
+		if (!mem) {
+			sc_log_openssl(ctx);
+			LOG_TEST_RET(ctx, SC_ERROR_INTERNAL, "MEM buffer allocation error");
+		}
 
-	ptr = buff;
-	rv = i2d_X509_NAME(X509_get_subject_name(x), &ptr);
-	if (rv <= 0) {
-		sc_log_openssl(ctx);
-		LOG_TEST_RET(ctx, SC_ERROR_INTERNAL, "Get subject name error");
+		x = d2i_X509_bio(mem, NULL);
+		if (!x) {
+			sc_log_openssl(ctx);
+			LOG_TEST_RET(ctx, SC_ERROR_INTERNAL, "x509 parse error");
+		}
+		buff = OPENSSL_malloc(i2d_X509(x,NULL) + EVP_MAX_MD_SIZE);
+		if (!buff) {
+			sc_log_openssl(ctx);
+			LOG_TEST_RET(ctx, SC_ERROR_OUT_OF_MEMORY, "OpenSSL allocation error");
+		}
+
+		ptr = buff;
+		rv = i2d_X509_NAME(X509_get_subject_name(x), &ptr);
+		if (rv <= 0) {
+			sc_log_openssl(ctx);
+			LOG_TEST_RET(ctx, SC_ERROR_INTERNAL, "Get subject name error");
+		}
+
+		key_info->subject.value = malloc(rv);
+		if (!key_info->subject.value)
+			LOG_TEST_RET(ctx, SC_ERROR_OUT_OF_MEMORY, "Subject allocation error");
+
+		memcpy(key_info->subject.value, buff, rv);
+		key_info->subject.len = rv;
 	}
-
-	key_info->subject.value = malloc(rv);
-	if (!key_info->subject.value)
-		LOG_TEST_RET(ctx, SC_ERROR_OUT_OF_MEMORY, "Subject allocation error");
-
-	memcpy(key_info->subject.value, buff, rv);
-	key_info->subject.len = rv;
 
 	strlcpy(key_object->label, cert_object->label, sizeof(key_object->label));
 
