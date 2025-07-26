@@ -471,6 +471,13 @@ int sc_pkcs15emu_add_x509_cert(sc_pkcs15_card_t *p15card,
 	return sc_pkcs15emu_object_add(p15card, SC_PKCS15_TYPE_CERT_X509, obj, cert);
 }
 
+int sc_pkcs15emu_add_CVC_cert(sc_pkcs15_card_t *p15card,
+	const sc_pkcs15_object_t *obj, const sc_pkcs15_cert_info_t *cert)
+{
+	return sc_pkcs15emu_object_add(p15card, SC_PKCS15_TYPE_CERT_CVC, obj, cert);
+}
+
+
 int sc_pkcs15emu_add_data_object(sc_pkcs15_card_t *p15card,
 	const sc_pkcs15_object_t *obj, const sc_pkcs15_data_info_t *data)
 {
