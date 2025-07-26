@@ -34,6 +34,62 @@
 #include "internal.h"
 #include "asn1.h"
 #include "pkcs15.h"
+#if defined(ENABLE_SM_NIST)
+#include "sm/sm-nist.h"
+#endif  /* ENABLE_SM_NIST */
+
+int
+sc_pkcs15_find_cert_type(sc_context_t *ctx, const u8 *cert_value, size_t cert_len)
+{
+	if (cert_value == NULL || cert_len <  20)
+		LOG_FUNC_RETURN(ctx, SC_ERROR_INVALID_ARGUMENTS);
+
+	if (cert_value[0] == 0x30)
+		LOG_FUNC_RETURN(ctx, SC_PKCS15_TYPE_CERT_X509);
+	if  (cert_value[0] == 0x7F && cert_value[1] == 0x21)
+		LOG_FUNC_RETURN(ctx, SC_PKCS15_TYPE_CERT_CVC);
+
+	LOG_FUNC_RETURN(ctx, SC_ERROR_INVALID_ASN1_OBJECT);
+}
+
+static int
+parse_cvc_cert(sc_context_t *ctx, struct sc_pkcs15_der *der, struct sc_pkcs15_cert *cert)
+{
+	int r = 0;
+	nist_cvc_t nist_cvc;
+
+	/* TODO only get pubkey if possible for EC where (7F49 06 curveName 86 Ecpoint as 04||X||Y
+	 * convert to SPKI for now, leave cert->key = NULL;
+	 */
+	LOG_FUNC_CALLED(ctx);
+
+	memset(&nist_cvc, 0, sizeof(nist_cvc));
+	memset(cert, 0, sizeof(*cert));
+	cert->cert_type = SC_PKCS15_TYPE_CERT_CVC;
+
+	cert->data.value = malloc(der->len);
+	if (!cert->data.value)
+		LOG_FUNC_RETURN(ctx, SC_ERROR_OUT_OF_MEMORY);
+
+	memcpy(cert->data.value, der->value, der->len);
+	cert->data.len = der->len;
+
+#if defined(ENABLE_SM_NIST)
+	{
+		nist_cvc_t nist_cvc;
+		memset(&nist_cvc, 0, sizeof(nist_cvc));
+		sc_log(ctx, "TODO convert CVC curveName and ecpoint to SPKI");
+		/* TODO assume all CVC certs are from NIST 800-73-4 */
+
+		r = sm_nist_decode_cvc(ctx, &der->value, &der->len, &nist_cvc);
+			/* TODO fill in pubkey in cert and maybe others */
+
+		sm_nist_clear_cvc_content(&nist_cvc);
+	}
+#endif /* ENABLE_SM_NIST */
+
+	LOG_FUNC_RETURN(ctx, r);
+}
 
 static int
 parse_x509_cert(sc_context_t *ctx, struct sc_pkcs15_der *der, struct sc_pkcs15_cert *cert)
@@ -88,6 +144,7 @@ parse_x509_cert(sc_context_t *ctx, struct sc_pkcs15_der *der, struct sc_pkcs15_c
 	LOG_FUNC_CALLED(ctx);
 
 	memset(cert, 0, sizeof(*cert));
+	cert->cert_type = SC_PKCS15_TYPE_CERT_X509;
 	obj = sc_asn1_verify_tag(ctx, buf, buflen, SC_ASN1_TAG_SEQUENCE | SC_ASN1_CONS, &objlen);
 	if (obj == NULL)
 		LOG_TEST_RET(ctx, SC_ERROR_INVALID_ASN1_OBJECT, "X.509 certificate not found");
@@ -349,16 +406,35 @@ sc_pkcs15_pubkey_from_cert(struct sc_context *ctx,
 		struct sc_pkcs15_der *cert_blob, struct sc_pkcs15_pubkey **out)
 {
 	int rv;
+	int cert_type = -1;
 	struct sc_pkcs15_cert * cert;
 
 	cert =  calloc(1, sizeof(struct sc_pkcs15_cert));
 	if (cert == NULL)
 		return SC_ERROR_OUT_OF_MEMORY;
 
-	rv = parse_x509_cert(ctx, cert_blob, cert);
+	rv = sc_pkcs15_find_cert_type(ctx, cert_blob->value, cert_blob->len);
+	LOG_TEST_GOTO_ERR(ctx, rv, "invalid cert type");
+	cert_type = rv;
+
+	if (cert_type == SC_PKCS15_TYPE_CERT_X509)
+		rv = parse_x509_cert(ctx, cert_blob, cert);
+	else if (cert_type == SC_PKCS15_TYPE_CERT_CVC)
+		rv = parse_cvc_cert(ctx, cert_blob, cert);
+	else {
+		rv = SC_ERROR_NOT_SUPPORTED;
+		sc_log(ctx, "Unknown cert_type 0x%2.2X", cert_type);
+		goto err;
+	}
+
+	if (rv < 0) {
+		sc_log(ctx, "Failed to get pubkey from cert for cert_type 0x%2.2X", cert_type);
+		goto err;
+	}
 
 	*out = cert->key;
 	cert->key = NULL;
+err:
 	sc_pkcs15_free_certificate(cert);
 
 	LOG_FUNC_RETURN(ctx, rv);
@@ -397,11 +473,40 @@ sc_pkcs15_read_certificate(struct sc_pkcs15_card *p15card, const struct sc_pkcs1
 		LOG_FUNC_RETURN(ctx, SC_ERROR_OUT_OF_MEMORY);
 	}
 	memset(cert, 0, sizeof(struct sc_pkcs15_cert));
-	if (parse_x509_cert(ctx, &der, cert)) {
+
+	/*
+	 * PKCS15 defines 7 types of certificates, and stores in CDF 
+	 * using contact-specific ASN.1 tag.  Except X.509 does not have
+	 * a context-specific tag.
+	 * OpenSC defines in pkcs15.h SC_PKCS15_TYPE_CERT, as a certificate clase with
+	 * SC_PKCS15_TYPE_CERT_X509 and SC_PKCS15_TYPE_CERT_SPKI as specific subclasses
+	 * (SC_PKCS15_TYPE_CERT_SPKI was never implemented in OpenSC)
+	 * Several of tpes are based on X.509 ASN.1, but CVCs start with tag 7F21
+	 * but other tags are left up to the card developer.  
+	 * 
+	 * info->type is the cert_type from store certificate or decode of CDF 
+	 * If other parse routines may be need in future
+	 * parse routing will set the cert->cert_type
+	 */
+
+	switch  (info->cert_type) {
+		case SC_PKCS15_TYPE_CERT:
+		case SC_PKCS15_TYPE_CERT_X509:
+			r = parse_x509_cert(ctx, &der, cert);
+			break;
+		case SC_PKCS15_TYPE_CERT_CVC:
+			r = parse_cvc_cert(ctx, &der, cert);
+			break;
+		default:
+			sc_log(ctx, "Unknown cert_type: 0x%0X", cert->cert_type);
+			r = SC_ERROR_NOT_SUPPORTED;
+	}
+	if (r < 0) {
 		free(der.value);
 		sc_pkcs15_free_certificate(cert);
 		LOG_FUNC_RETURN(ctx, SC_ERROR_INVALID_ASN1_OBJECT);
 	}
+
 	free(der.value);
 
 	*cert_out = cert;
@@ -414,6 +519,14 @@ static const struct sc_asn1_entry c_asn1_cred_ident[] = {
 	{ "idValue",	SC_ASN1_OCTET_STRING, SC_ASN1_TAG_OCTET_STRING, 0, NULL, NULL },
 	{ NULL, 0, 0, 0, NULL, NULL }
 };
+
+/*
+ * CertificateObject{CertAtributes} ::= PKCS15Object {
+ *          CommonCertificateAttributes, NULL, CertAttributes}
+ * The NULL (05 00) is missing. Looks like it is a separator to avoid conflicts
+ * Between "identifier"  and "path" both SEQUENCE and  OPTIONAL
+ * FIXME: Adding it now could cause confusion with existing cards.
+ */
 static const struct sc_asn1_entry c_asn1_com_cert_attr[] = {
 	{ "iD",		SC_ASN1_PKCS15_ID, SC_ASN1_TAG_OCTET_STRING, 0, NULL, NULL },
 	{ "authority",	SC_ASN1_BOOLEAN,   SC_ASN1_TAG_BOOLEAN, SC_ASN1_OPTIONAL, NULL, NULL },
@@ -434,8 +547,15 @@ static const struct sc_asn1_entry c_asn1_type_cert_attr[] = {
 	{ "x509CertificateAttributes", SC_ASN1_STRUCT, SC_ASN1_TAG_SEQUENCE | SC_ASN1_CONS, 0, NULL, NULL },
 	{ NULL, 0, 0, 0, NULL, NULL }
 };
+static const struct sc_asn1_entry c_asn1_cert_choice[] = {
+	{ "x509Certificate", SC_ASN1_PKCS15_OBJECT, SC_ASN1_TAG_SEQUENCE | SC_ASN1_CONS, SC_ASN1_OPTIONAL, NULL, NULL },
+	/* FIXME: PKCS15 defines other choices too. Of which PKCS11 defines some of them */
+	{ "CvCertificate", SC_ASN1_PKCS15_OBJECT, SC_ASN1_CTX | 5 | SC_ASN1_CONS, SC_ASN1_OPTIONAL, NULL, NULL },
+	{ NULL, 0, 0, 0, NULL, NULL }
+};
+
 static const struct sc_asn1_entry c_asn1_cert[] = {
-	{ "x509Certificate", SC_ASN1_PKCS15_OBJECT, SC_ASN1_TAG_SEQUENCE | SC_ASN1_CONS, 0, NULL, NULL },
+	{ "Certificate",  SC_ASN1_CHOICE, 0, 0, NULL, NULL },
 	{ NULL, 0, 0, 0, NULL, NULL }
 };
 
@@ -448,7 +568,7 @@ sc_pkcs15_decode_cdf_entry(struct sc_pkcs15_card *p15card, struct sc_pkcs15_obje
 	struct sc_pkcs15_cert_info info;
 	struct sc_asn1_entry	asn1_cred_ident[3], asn1_com_cert_attr[4],
 				asn1_x509_cert_attr[2], asn1_type_cert_attr[2],
-				asn1_cert[2], asn1_x509_cert_value_choice[3];
+				asn1_cert[3], asn1_cert_choice[3], asn1_x509_cert_value_choice[3];
 	struct sc_asn1_pkcs15_object cert_obj = {
 		obj, asn1_com_cert_attr, NULL,
 		asn1_type_cert_attr };
@@ -463,6 +583,7 @@ sc_pkcs15_decode_cdf_entry(struct sc_pkcs15_card *p15card, struct sc_pkcs15_obje
 	sc_copy_asn1_entry(c_asn1_x509_cert_attr, asn1_x509_cert_attr);
 	sc_copy_asn1_entry(c_asn1_x509_cert_value_choice, asn1_x509_cert_value_choice);
 	sc_copy_asn1_entry(c_asn1_type_cert_attr, asn1_type_cert_attr);
+	sc_copy_asn1_entry(c_asn1_cert_choice, asn1_cert_choice);
 	sc_copy_asn1_entry(c_asn1_cert, asn1_cert);
 
 	sc_format_asn1_entry(asn1_cred_ident + 0, &id_type, NULL, 0);
@@ -474,7 +595,10 @@ sc_pkcs15_decode_cdf_entry(struct sc_pkcs15_card *p15card, struct sc_pkcs15_obje
 	sc_format_asn1_entry(asn1_x509_cert_value_choice + 0, &info.path, NULL, 0);
 	sc_format_asn1_entry(asn1_x509_cert_value_choice + 1, &der->value, &der->len, 0);
 	sc_format_asn1_entry(asn1_type_cert_attr + 0, asn1_x509_cert_attr, NULL, 0);
-	sc_format_asn1_entry(asn1_cert + 0, &cert_obj, NULL, 0);
+
+	sc_format_asn1_entry(asn1_cert_choice + 0, &cert_obj, NULL, 0);
+	sc_format_asn1_entry(asn1_cert_choice + 1, &cert_obj, NULL, 0);
+	sc_format_asn1_entry(asn1_cert + 0, asn1_cert_choice, NULL, 0);
 
 	/* Fill in defaults */
 	memset(&info, 0, sizeof(info));
@@ -512,7 +636,15 @@ sc_pkcs15_decode_cdf_entry(struct sc_pkcs15_card *p15card, struct sc_pkcs15_obje
 			return 0;
 	}
 
-	obj->type = SC_PKCS15_TYPE_CERT_X509;
+	if (asn1_cert_choice[0].flags & SC_ASN1_PRESENT)
+		obj->type = SC_PKCS15_TYPE_CERT_X509;
+	else if (asn1_cert_choice[1].flags & SC_ASN1_PRESENT)  /* CONTEXT-SPECIFIC [5] as required by pkcs15 SPECS */
+		obj->type = SC_PKCS15_TYPE_CERT_CVC;
+	else
+		LOG_TEST_RET(ctx, SC_ERROR_NOT_SUPPORTED, "unsupported certificate type");
+	/* Save cert type in info too */
+	info.cert_type = obj->type;
+
 	obj->data = malloc(sizeof(info));
 	if (obj->data == NULL)
 		LOG_FUNC_RETURN(ctx, SC_ERROR_OUT_OF_MEMORY);
@@ -528,7 +660,7 @@ sc_pkcs15_encode_cdf_entry(sc_context_t *ctx, const struct sc_pkcs15_object *obj
 {
 	struct sc_asn1_entry	asn1_cred_ident[3], asn1_com_cert_attr[4],
 				asn1_x509_cert_attr[2], asn1_type_cert_attr[2],
-				asn1_cert[2], asn1_x509_cert_value_choice[3];
+				asn1_cert[3], asn1_cert_choice[3], asn1_x509_cert_value_choice[3];
 	struct sc_pkcs15_cert_info *infop = (sc_pkcs15_cert_info_t *) obj->data;
 	sc_pkcs15_der_t *der = &infop->value;
 	struct sc_asn1_pkcs15_object cert_obj = { (struct sc_pkcs15_object *) obj,
@@ -536,11 +668,13 @@ sc_pkcs15_encode_cdf_entry(sc_context_t *ctx, const struct sc_pkcs15_object *obj
 							asn1_type_cert_attr };
 	int r;
 
+
 	sc_copy_asn1_entry(c_asn1_cred_ident, asn1_cred_ident);
 	sc_copy_asn1_entry(c_asn1_com_cert_attr, asn1_com_cert_attr);
 	sc_copy_asn1_entry(c_asn1_x509_cert_attr, asn1_x509_cert_attr);
 	sc_copy_asn1_entry(c_asn1_x509_cert_value_choice, asn1_x509_cert_value_choice);
 	sc_copy_asn1_entry(c_asn1_type_cert_attr, asn1_type_cert_attr);
+	sc_copy_asn1_entry(c_asn1_cert_choice, asn1_cert_choice);
 	sc_copy_asn1_entry(c_asn1_cert, asn1_cert);
 
 	sc_format_asn1_entry(asn1_com_cert_attr + 0, (void *) &infop->id, NULL, 1);
@@ -552,7 +686,26 @@ sc_pkcs15_encode_cdf_entry(sc_context_t *ctx, const struct sc_pkcs15_object *obj
 		sc_format_asn1_entry(asn1_x509_cert_value_choice + 1, der->value, &der->len, 1);
 	}
 	sc_format_asn1_entry(asn1_type_cert_attr + 0, &asn1_x509_cert_value_choice, NULL, 1);
-	sc_format_asn1_entry(asn1_cert + 0, (void *) &cert_obj, NULL, 1);
+
+	sc_format_asn1_entry(asn1_cert + 0, asn1_cert_choice, NULL, 1);
+
+	/* When creating caller should have set obj->type to specific type  of cert */
+	/* TODO: But will accept SC_PKCS15_TYPE_CERT as being X509 */
+
+	switch (obj->type) {
+	case SC_PKCS15_TYPE_CERT:
+	case SC_PKCS15_TYPE_CERT_X509:
+		sc_format_asn1_entry(asn1_cert_choice + 0, &cert_obj, NULL, 1);
+		break;
+	case SC_PKCS15_TYPE_CERT_CVC:
+		  /* handle the CONTEXT-SPECIFIC [5] encoding required by PKCS15 ASN.1 */
+		 sc_format_asn1_entry(asn1_cert_choice + 1, &cert_obj, NULL, 1);
+		 break;
+	default:
+		sc_log(ctx, "Invalid certificate type: %X", obj->type);
+		LOG_FUNC_RETURN(ctx, SC_ERROR_INTERNAL);
+		break;
+	}
 
 	r = sc_asn1_encode(ctx, asn1_cert, buf, bufsize);
 
