@@ -119,7 +119,7 @@ struct pkcs15_pubkey_object {
 #define __p15_type(obj)		(((obj) && (obj)->p15_object)? ((obj)->p15_object->type) : (unsigned int)-1)
 #define is_privkey(obj)		((__p15_type(obj) & SC_PKCS15_TYPE_CLASS_MASK) == SC_PKCS15_TYPE_PRKEY)
 #define is_pubkey(obj)		((__p15_type(obj) & SC_PKCS15_TYPE_CLASS_MASK) == SC_PKCS15_TYPE_PUBKEY)
-#define is_cert(obj)		(__p15_type(obj) == SC_PKCS15_TYPE_CERT_X509)
+#define is_cert(obj)		((__p15_type(obj) & SC_PKCS15_TYPE_CLASS_MASK) == SC_PKCS15_TYPE_CERT)
 
 struct pkcs15_data_object {
 	struct pkcs15_any_object	base;
@@ -1110,7 +1110,9 @@ pkcs15_add_object(struct sc_pkcs11_slot *slot, struct pkcs15_any_object *obj,
 			}
 		}
 		break;
+	case SC_PKCS15_TYPE_CERT:
 	case SC_PKCS15_TYPE_CERT_X509:
+	case SC_PKCS15_TYPE_CERT_CVC:
 		pkcs15_add_object(slot, (struct pkcs15_any_object *) obj->related_pubkey, NULL);
 		pkcs15_add_object(slot, (struct pkcs15_any_object *) obj->related_cert, NULL);
 		break;
@@ -1326,7 +1328,12 @@ _pkcs15_create_typed_objects(struct pkcs15_fw_data *fw_data)
 	if (rv < 0)
 		return rv;
 
-	rv = pkcs15_create_pkcs11_objects(fw_data, SC_PKCS15_TYPE_CERT_X509, "certificate",
+	rv = pkcs15_create_pkcs11_objects(fw_data, SC_PKCS15_TYPE_CERT_X509, "X509 certificate",
+			__pkcs15_create_cert_object);
+	if (rv < 0)
+		return rv;
+
+	rv = pkcs15_create_pkcs11_objects(fw_data, SC_PKCS15_TYPE_CERT_CVC, "CVC certificate",
 			__pkcs15_create_cert_object);
 	if (rv < 0)
 		return rv;
@@ -2946,8 +2953,16 @@ pkcs15_create_certificate(struct sc_pkcs11_slot *slot,
 				&cert_type, NULL);
 	if (rv != CKR_OK)
 		return rv;
-	if (cert_type != CKC_X_509)
-		return CKR_ATTRIBUTE_VALUE_INVALID;
+	switch (cert_type) {
+		case CKC_X_509:
+			args.type = SC_PKCS15_TYPE_CERT_X509;
+			break;
+		case CKC_CVC:
+			args.type = SC_PKCS15_TYPE_CERT_CVC;
+			break;
+		default:
+			return CKR_ATTRIBUTE_VALUE_INVALID;
+	}
 
 	while (ulCount--) {
 		CK_ATTRIBUTE_PTR attr = pTemplate++;
@@ -3919,7 +3934,10 @@ pkcs15_cert_get_attribute(struct sc_pkcs11_session *session, void *object, CK_AT
 		break;
 	case CKA_CERTIFICATE_TYPE:
 		check_attribute_buffer(attr, sizeof(CK_CERTIFICATE_TYPE));
-		*(CK_CERTIFICATE_TYPE*)attr->pValue = CKC_X_509;
+		if (cert->cert_info->cert_type == SC_PKCS15_TYPE_CERT_CVC)
+			*(CK_CERTIFICATE_TYPE*)attr->pValue = CKC_CVC;
+		else
+			*(CK_CERTIFICATE_TYPE*)attr->pValue = CKC_X_509;
 		break;
 	case CKA_ID:
 #ifdef ZERO_CKAID_FOR_CA_CERTS
