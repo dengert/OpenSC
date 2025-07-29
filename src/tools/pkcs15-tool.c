@@ -279,7 +279,12 @@ static void print_cert_info(const struct sc_pkcs15_object *obj)
 		return;
 	}
 
-	printf("X.509 Certificate [%.*s]\n", (int) sizeof obj->label, obj->label);
+	if (obj->type ==  SC_PKCS15_TYPE_CERT_X509)
+		printf("X.509 Certificate [%.*s]\n", (int) sizeof obj->label, obj->label);
+	else if (obj->type ==  SC_PKCS15_TYPE_CERT_CVC)
+		printf("CVC Certificate [%.*s]\n", (int) sizeof obj->label, obj->label);
+	else
+		printf("other Certificate [%.*s]\n", (int) sizeof obj->label, obj->label);
 	print_common_flags(obj);
 	printf("\tAuthority      : %s\n", cert_info->authority ? "yes" : "no");
 	printf("\tPath           : %s\n", sc_print_path(&cert_info->path));
@@ -289,11 +294,18 @@ static void print_cert_info(const struct sc_pkcs15_object *obj)
 
 	private_obj = obj->flags & SC_PKCS15_CO_FLAG_PRIVATE;
 	rv = sc_pkcs15_read_certificate(p15card, cert_info, private_obj, &cert_parsed);
-	if (rv >= 0 && cert_parsed)   {
-		printf("\tEncoded serial : %02X %02X ", *(cert_parsed->serial), *(cert_parsed->serial + 1));
-		util_hex_dump(stdout, cert_parsed->serial + 2, cert_parsed->serial_len - 2, "");
+	if (obj->type ==  SC_PKCS15_TYPE_CERT_X509) {
+		rv = sc_pkcs15_read_certificate(p15card, cert_info, private_obj, &cert_parsed);
+		if (rv >= 0 && cert_parsed)   {
+			printf("\tEncoded serial : %02X %02X ", *(cert_parsed->serial), *(cert_parsed->serial + 1));
+			util_hex_dump(stdout, cert_parsed->serial + 2, cert_parsed->serial_len - 2, "");
+			printf("\n");
+			sc_pkcs15_free_certificate(cert_parsed);
+		}
+	} else {
+		printf("\tValue:");
+		util_hex_dump(stdout, cert_info->value.value, cert_info->value.len, "");
 		printf("\n");
-		sc_pkcs15_free_certificate(cert_parsed);
 	}
 }
 
@@ -302,7 +314,8 @@ static int list_certificates(void)
 	int r, i;
 	struct sc_pkcs15_object *objs[32];
 
-	r = sc_pkcs15_get_objects(p15card, SC_PKCS15_TYPE_CERT_X509, objs, 32);
+	/* request all cert types */
+	r = sc_pkcs15_get_objects(p15card, SC_PKCS15_TYPE_CERT, objs, 32);
 	if (r < 0) {
 		fprintf(stderr, "Certificate enumeration failed: %s\n", sc_strerror(r));
 		return 1;
@@ -424,7 +437,8 @@ static int read_certificate(void)
 	id.len = SC_PKCS15_MAX_ID_SIZE;
 	sc_pkcs15_hex_string_to_id(opt_cert, &id);
 
-	r = sc_pkcs15_get_objects(p15card, SC_PKCS15_TYPE_CERT_X509, objs, 32);
+	/* read any type of CERT */
+	r = sc_pkcs15_get_objects(p15card, SC_PKCS15_TYPE_CERT, objs, 32);
 	if (r < 0) {
 		fprintf(stderr, "Certificate enumeration failed: %s\n", sc_strerror(r));
 		return 1;
@@ -446,7 +460,11 @@ static int read_certificate(void)
 			fprintf(stderr, "Certificate read failed: %s\n", sc_strerror(r));
 			return 1;
 		}
-		r = print_pem_object("CERTIFICATE", cert->data.value, cert->data.len);
+		/* print CVC as hex dump, as pem is not supported */
+		if (cert->cert_type == SC_PKCS15_TYPE_CERT_CVC)
+			r = print_pem_object("CVC certificate", cert->data.value, cert->data.len);
+		  else
+			r = print_pem_object("CERTIFICATE", cert->data.value, cert->data.len);
 		sc_pkcs15_free_certificate(cert);
 		return r;
 	}
