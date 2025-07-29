@@ -56,14 +56,12 @@ static int
 parse_cvc_cert(sc_context_t *ctx, struct sc_pkcs15_der *der, struct sc_pkcs15_cert *cert)
 {
 	int r = 0;
-	nist_cvc_t nist_cvc;
 
-	/* TODO only get pubkey if possible for EC where (7F49 06 curveName 86 Ecpoint as 04||X||Y
+	/* only get pubkey if possible for EC where (7F49 06 curveName 86 Ecpoint as 04||X||Y
 	 * convert to SPKI for now, leave cert->key = NULL;
 	 */
 	LOG_FUNC_CALLED(ctx);
 
-	memset(&nist_cvc, 0, sizeof(nist_cvc));
 	memset(cert, 0, sizeof(*cert));
 	cert->cert_type = SC_PKCS15_TYPE_CERT_CVC;
 
@@ -77,12 +75,63 @@ parse_cvc_cert(sc_context_t *ctx, struct sc_pkcs15_der *der, struct sc_pkcs15_ce
 #if defined(ENABLE_SM_NIST)
 	{
 		nist_cvc_t nist_cvc;
+		struct sc_pkcs15_pubkey *pubkey;
+		u8 *buf = NULL;
+		size_t buflen = 0;
+
 		memset(&nist_cvc, 0, sizeof(nist_cvc));
-		sc_log(ctx, "TODO convert CVC curveName and ecpoint to SPKI");
+		memset(&pubkey, 0, sizeof(pubkey));
+
+		sc_log(ctx, "convert CVC curveName and ecpoint to sc_pkcs15_pubkey");
 		/* TODO assume all CVC certs are from NIST 800-73-4 */
+		/* NIST only uses EC in CVC */
 
 		r = sm_nist_decode_cvc(ctx, &der->value, &der->len, &nist_cvc);
-			/* TODO fill in pubkey in cert and maybe others */
+		if (r < 0) {
+			sc_log(ctx, "sm_nist_decode_cvc failed, ignore failure");
+			r = 0;
+		} else {
+			pubkey = calloc(1, sizeof(struct sc_pkcs15_pubkey));
+			if (pubkey == NULL)
+				LOG_FUNC_RETURN(ctx, SC_ERROR_OUT_OF_MEMORY);
+
+			pubkey->algorithm = SC_ALGORITHM_EC;
+			pubkey->alg_id = (struct sc_algorithm_id *)calloc(1, sizeof(struct sc_algorithm_id));
+			if (pubkey->alg_id == NULL)
+				LOG_FUNC_RETURN(ctx, SC_ERROR_OUT_OF_MEMORY);
+			sc_init_oid(&pubkey->alg_id->oid);
+			sc_format_oid(&pubkey->alg_id->oid, "1.2.840.10045.2.1");
+			
+			r = sc_asn1_encode_object_id(&buf, &buflen, &nist_cvc.pubKeyOID);
+			if  (r < 0) {
+				free(buf);
+				sc_log(ctx, "sm_nist_decode_cvc failed, ignore failure");
+			}
+
+			pubkey->u.ec.params.der.value = malloc(buflen + 2);
+			if (pubkey->u.ec.params.der.value == NULL)
+				LOG_FUNC_RETURN(ctx, SC_ERROR_OUT_OF_MEMORY);
+
+			pubkey->u.ec.params.der.len = buflen + 2;
+			pubkey->u.ec.params.der.value[0] = 0x06;
+			pubkey->u.ec.params.der.value[1] = (u8) buflen;
+			memcpy(&pubkey->u.ec.params.der.value[2], buf, buflen);
+			free(buf);
+			r = sc_pkcs15_fix_ec_parameters(ctx, &pubkey->u.ec.params);
+			if (r < 0)
+				sc_log(ctx, "sm_nist_decode_cvc failed, ignore failure");
+
+			pubkey->u.ec.ecpointQ.len = nist_cvc.publicPointlen;
+			pubkey->u.ec.ecpointQ.value = calloc(1, pubkey->u.ec.ecpointQ.len);
+			if (pubkey->u.ec.ecpointQ.value == NULL)
+				LOG_FUNC_RETURN(ctx, SC_ERROR_OUT_OF_MEMORY);
+
+			memcpy(pubkey->u.ec.ecpointQ.value, nist_cvc.publicPoint, pubkey->u.ec.ecpointQ.len);
+
+			cert->key = pubkey;
+			sm_nist_clear_cvc_content(&nist_cvc);
+		}
+
 
 		sm_nist_clear_cvc_content(&nist_cvc);
 	}
@@ -442,7 +491,7 @@ err:
 
 
 int
-sc_pkcs15_read_certificate(struct sc_pkcs15_card *p15card, const struct sc_pkcs15_cert_info *info,
+sc_pkcs15_read_certificate(struct sc_pkcs15_card *p15card, struct sc_pkcs15_cert_info *info,
 		int private_obj, struct sc_pkcs15_cert **cert_out)
 {
 	struct sc_context *ctx = NULL;
@@ -475,19 +524,27 @@ sc_pkcs15_read_certificate(struct sc_pkcs15_card *p15card, const struct sc_pkcs1
 	memset(cert, 0, sizeof(struct sc_pkcs15_cert));
 
 	/*
-	 * PKCS15 defines 7 types of certificates, and stores in CDF 
-	 * using contact-specific ASN.1 tag.  Except X.509 does not have
-	 * a context-specific tag.
+	 * PKCS15 defines 7 types of certificates, and stores type in CDF 
+	 * using contact-specific ASN.1 tags.  X.509 does not have
+	 * a context-specific tag, but starts with sequence. 
 	 * OpenSC defines in pkcs15.h SC_PKCS15_TYPE_CERT, as a certificate clase with
 	 * SC_PKCS15_TYPE_CERT_X509 and SC_PKCS15_TYPE_CERT_SPKI as specific subclasses
 	 * (SC_PKCS15_TYPE_CERT_SPKI was never implemented in OpenSC)
-	 * Several of tpes are based on X.509 ASN.1, but CVCs start with tag 7F21
-	 * but other tags are left up to the card developer.  
+	 * Several of types are based on X.509 ASN.1. Known CVCs start with tag 7F21
+	 * other CVC or cert types will need additionl changes.  
 	 * 
-	 * info->type is the cert_type from store certificate or decode of CDF 
-	 * If other parse routines may be need in future
-	 * parse routing will set the cert->cert_type
+	 * info->cert_type is set when a cert certificate is stored on a card and 
+	 * for PKCS15 cards is stored in CDF. But other emulated card drivers also 
+	 * call this routinei * which do not know the the cert_type. 
+	 * If info->cert_type == 0 sc_pkcs15_find_cert_type will attempt to
+	 * identify the type of certificate and set info->cert_type
 	 */
+
+	if (info->cert_type == 0) {
+		r = sc_pkcs15_find_cert_type(ctx, der.value, der.len);
+		if (r > 0)
+			info->cert_type = r;
+	}
 
 	switch  (info->cert_type) {
 		case SC_PKCS15_TYPE_CERT:
@@ -498,7 +555,7 @@ sc_pkcs15_read_certificate(struct sc_pkcs15_card *p15card, const struct sc_pkcs1
 			r = parse_cvc_cert(ctx, &der, cert);
 			break;
 		default:
-			sc_log(ctx, "Unknown cert_type: 0x%0X", cert->cert_type);
+			sc_log(ctx, "Unknown or parse failed for cert_type: 0x%0X", cert->cert_type);
 			r = SC_ERROR_NOT_SUPPORTED;
 	}
 	if (r < 0) {
