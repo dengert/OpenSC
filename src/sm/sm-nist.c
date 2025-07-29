@@ -147,7 +147,7 @@ typedef struct nist_sm_session {
 #define C_ASN1_NIST_CVC_PUBKEY_SIZE 3
 /* ECC key only */
 static const struct sc_asn1_entry c_asn1_nist_cvc_pubkey[C_ASN1_NIST_CVC_PUBKEY_SIZE] = {
-		{"publicKeyOID", SC_ASN1_OBJECT,	 SC_ASN1_UNI | SC_ASN1_OBJECT, 0,				  NULL, NULL},
+		{"publicKeyOID", SC_ASN1_OBJECT,	 SC_ASN1_UNI | SC_ASN1_TAG_OBJECT, 0,				  NULL, NULL},
 		{"publicPoint",	SC_ASN1_OCTET_STRING, SC_ASN1_CTX | 6,	       SC_ASN1_OPTIONAL | SC_ASN1_ALLOC, NULL, NULL},
 		{NULL,	       0,			  0,			     0,				NULL, NULL}
 };
@@ -167,7 +167,7 @@ static const struct sc_asn1_entry c_asn1_nist_cvc_dssig[C_ASN1_NIST_CVC_DSSIG_SI
 
 #define C_ASN1_NIST_CVC_ALG_ID_SIZE 3
 static const struct sc_asn1_entry c_asn1_nist_cvc_alg_id[C_ASN1_NIST_CVC_ALG_ID_SIZE] = {
-		{"signatureAlgorithmOID", SC_ASN1_OBJECT, SC_ASN1_UNI | SC_ASN1_OBJECT,	0,		   NULL, NULL},
+		{"signatureAlgorithmOID", SC_ASN1_OBJECT, SC_ASN1_UNI | SC_ASN1_TAG_OBJECT,	0,		   NULL, NULL},
 		{"nullParam",	      SC_ASN1_NULL,   SC_ASN1_UNI | SC_ASN1_TAG_NULL, SC_ASN1_OPTIONAL, NULL, NULL},
 		{NULL,		       0,		  0,			      0,		NULL, NULL}
 };
