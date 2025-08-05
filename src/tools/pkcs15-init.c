@@ -258,7 +258,7 @@ static const char *		option_help[] = {
 	"Specify secret key algorithm (use with --store-secret-key)",
 	"Specify public key label (use with --generate-key)",
 	"Specify user cert label (use with --store-private-key)",
-	"Specify user cert type: x509(=default) or cvc  (use with --store-certificate or --update-certificate)",
+	"Specify user cert type: x509(=default) or cvc (use with --store-certificate or --update-certificate)",
 	"Specify application name of data object (use with --store-data-object)",
 	"Specify application id of data object (use with --store-data-object)",
 	"Specify AID of the on-card PKCS#15 application to be binded to (in hexadecimal form)",
