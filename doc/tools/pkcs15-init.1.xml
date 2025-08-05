@@ -215,8 +215,9 @@
 			<para>
 				You can upload certificates to the card using the
 				<option>--store-certificate</option> option, which takes a filename as
-				an argument. This file is supposed to contain the PEM encoded X.509
-				certificate.
+				an argument. X.509 certificates are PEM encoded.
+				CVC certificates are DER encoded.
+				See the <option>--cert-type</option> option if storing a CVC certificate.
 			</para>
 		</refsect2>
 
@@ -543,7 +544,10 @@
 							Tells <command>pkcs15-init</command> to update the certificate
 							object with the ID specified via the <option>--id</option> option
 							with the certificate in <replaceable>filename</replaceable>.
-							The file is assumed to contain a PEM encoded certificate.
+							For X.509 certificates the file is assumed to contain a PEM encoded certificate.
+							For CVC certificates the file must be DER encoded.
+							See the <option>--cert-type</option> if updating a CVC certificate.
+
 						</para>
 						<para>Pay extra attention when updating mail decryption certificates, as
 							missing certificates can render e-mail messages unreadable!
@@ -735,6 +739,17 @@
 					<listitem>
 						<para>
 							Specify user cert label (use with <option>--store-private-key</option>)
+						</para>
+					</listitem>
+				</varlistentry>
+
+				<varlistentry>
+					<term>
+						<option>--cert-type</option> <replaceable>arg</replaceable>
+					</term>
+					<listitem>
+						<para>
+							user cert type: x509(=default) or cvc (use with --store-certificate or --update-certificate)
 						</para>
 					</listitem>
 				</varlistentry>
