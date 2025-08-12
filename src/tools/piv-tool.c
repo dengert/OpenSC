@@ -95,9 +95,9 @@ static const char *option_help[] = {
 	"Print the card serial number",
 	"Identify the card and print its name",
 	"Authenticate using default 3DES key",
-	"Generate key <ref>:<alg> 9A:06 on card, and output pubkey",
+	"Generate key <ref>:<alg>  i.e 9A:06 on card, and output pubkey",
 	"Load an object <containerID> containerID as defined in 800-73 without leading 0x",
-	"Load a cert <ref> where <ref> is 9A,9C,9D or 9E",
+	"Load a cert <ref> where <ref> is 9A, 9C, 9D, 9E or 82 to 95",
 	"Load a cert that has been gzipped <ref>",
 	"Output file for cert or key",
 	"Input file for cert",
@@ -230,12 +230,30 @@ static int load_cert(const char * cert_id, const char * cert_file,
 	sc_hex_to_bin(cert_id, buf,&buflen);
 
 	switch (buf[0]) {
-		case 0x9a: sc_format_path("0101",&path); break;
-		case 0x9c: sc_format_path("0100",&path); break;
-		case 0x9d: sc_format_path("0102",&path); break;
-		case 0x9e: sc_format_path("0500",&path); break;
+		case 0x9A: sc_format_path("0101",&path); break;
+		case 0x9C: sc_format_path("0100",&path); break;
+		case 0x9D: sc_format_path("0102",&path); break;
+		case 0x9E: sc_format_path("0500",&path); break;
+		case 0x82: sc_format_path("1001",&path); break;
+		case 0x83: sc_format_path("1002",&path); break;
+		case 0x84: sc_format_path("1003",&path); break;
+		case 0x85: sc_format_path("1004",&path); break;
+		case 0x86: sc_format_path("1005",&path); break;
+		case 0x87: sc_format_path("1006",&path); break;
+		case 0x88: sc_format_path("1007",&path); break;
+		case 0x89: sc_format_path("1008",&path); break;
+		case 0x8A: sc_format_path("1009",&path); break;
+		case 0x8B: sc_format_path("100A",&path); break;
+		case 0x8C: sc_format_path("100B",&path); break;
+		case 0x8D: sc_format_path("100C",&path); break;
+		case 0x8E: sc_format_path("100D",&path); break;
+		case 0x8F: sc_format_path("100E",&path); break;
+		case 0x90: sc_format_path("100F",&path); break;
+		case 0x91: sc_format_path("1011",&path); break;
+		case 0x92: sc_format_path("1012",&path); break;
+		case 0x93: sc_format_path("1013",&path); break;
 		default:
-			fprintf(stderr,"cert must be 9A, 9C, 9D or 9E\n");
+			fprintf(stderr,"cert must be 9A, 9C, 9D, 9E or 82 to 93\n");
 			r = 2;
 			goto err;
 	}
@@ -299,21 +317,40 @@ static int gen_key(const char * key_info)
 		return 2;
 	}
 	switch (buf[0]) {
-		case 0x9a:
-		case 0x9c:
-		case 0x9d:
-		case 0x9e:
+		case 0x9A:
+		case 0x9C:
+		case 0x9D:
+		case 0x9E:
+		case 0x82:
+		case 0x83:
+		case 0x84:
+		case 0x85:
+		case 0x86:
+		case 0x87:
+		case 0x88:
+		case 0x89:
+		case 0x8A:
+		case 0x8B:
+		case 0x8C:
+		case 0x8D:
+		case 0x8E:
+		case 0x8F:
+		case 0x90:
+		case 0x91:
+		case 0x92:
+		case 0x93:
 			keydata.key_num = buf[0];
 			break;
 		default:
-			fprintf(stderr, "<keyref>:<algid> must be 9A, 9C, 9D or 9E\n");
+			fprintf(stderr, "<keyref>:<algid> must be 9A, 9C, 9D, 9E or 82 to 93\n");
 			return 2;
 	}
 
 	switch (buf[1]) {
-		case 0x05: keydata.key_bits = 3072; break;
+		case 0x05: keydata.key_bits = 3072; break; /* max in sp 800 78-5 */
 		case 0x06: keydata.key_bits = 1024; break;
 		case 0x07: keydata.key_bits = 2048; break;
+		case 0x16: keydata.key_bits = 4096; break;  /* non standard */
 #if !defined(OPENSSL_NO_EC)
 		case 0x11: keydata.key_bits = 0;
 			nid = NID_X9_62_prime256v1; /* We only support one curve per algid */
@@ -321,11 +358,11 @@ static int gen_key(const char * key_info)
 		case 0x14: keydata.key_bits = 0;
 			nid = NID_secp384r1;
 			break;
-		case 0xE0:
+		case 0xE0:	/* non standard */
 			keydata.key_bits = 0;
 			nid = NID_ED25519;
 			break;
-		case 0xE1:
+		case 0xE1:	/* non standard */
 			keydata.key_bits = 0;
 			nid = NID_X25519;
 			break;
