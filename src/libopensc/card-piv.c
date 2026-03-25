@@ -3,7 +3,7 @@
  * card-default.c: Support for cards with no driver
  *
  * Copyright (C) 2001, 2002  Juha Yrjölä <juha.yrjola@iki.fi>
- * Copyright (C) 2005-2024  Douglas E. Engert <deengert@gmail.com>
+ * Copyright (C) 2005-2026  Douglas E. Engert <deengert@gmail.com>
  * Copyright (C) 2006, Identity Alliance, Thomas Harning <thomas.harning@identityalliance.com>
  * Copyright (C) 2007, EMC, Russell Larner <rlarner@rsa.com>
  *
@@ -536,6 +536,11 @@ static const struct sc_atr_table piv_atrs[] = {
 	  "ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:00:00", NULL, SC_CARD_TYPE_PIV_II_800_73_4, 0, NULL },
 	{ "3b:86:80:01:80:31:c1:52:41:12:76", NULL, NULL, SC_CARD_TYPE_PIV_II_800_73_4, 0, NULL }, /* contactless */
 
+	/* Token2 PIV is detected from historic bytes 54:4b:00:50:49:56 is "TK0PIV"  or could use ATR:
+	{ "3b:8f:80:01:54:4b:00:50:49:56:04:02:38:38:38:38:38:38:38:60",
+	  "ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:00:00:00:00:00:00:00:00:00:00", NULL, SC_CARD_TYPE_PIV_II_TOKEN2, 0, NULL},
+	*/
+
 	{ NULL, NULL, NULL, 0, 0, NULL }
 };
 
@@ -576,6 +581,7 @@ static struct piv_aid piv_aids[] = {
 #define CI_NO_EC			    0x00040000U /* No EC at all */
 #define CI_RSA_4096			    0x00080000U /* Card supports rsa 4096 */
 #define CI_25519			    0x00100000U /* Card supports ED25519 and X25519 */
+#define CI_RSA_3072			    0x00200000U /* Card supports rsa 3072 */
 
 /*
  * Flags in the piv_object:
@@ -5346,6 +5352,7 @@ static int piv_match_card(sc_card_t *card)
 		case SC_CARD_TYPE_PIV_II_PIVKEY:
 		case SC_CARD_TYPE_PIV_II_SWISSBIT:
 		case SC_CARD_TYPE_PIV_II_800_73_4:
+		case SC_CARD_TYPE_PIV_II_TOKEN2:
 			break;
 		default:
 			return 0; /* can not handle the card */
@@ -5397,6 +5404,7 @@ static int piv_match_card_continued(sc_card_t *card)
 		case SC_CARD_TYPE_PIV_II_PIVKEY:
 		case SC_CARD_TYPE_PIV_II_SWISSBIT:
 		case SC_CARD_TYPE_PIV_II_800_73_4:
+		case SC_CARD_TYPE_PIV_II_TOKEN2:
 			type = card->type;
 			break;
 		default:
@@ -5423,6 +5431,10 @@ static int piv_match_card_continued(sc_card_t *card)
 			else if (card->reader->atr_info.hist_bytes_len >= 6 &&
 					!(memcmp(card->reader->atr_info.hist_bytes, "PIVKEY", 6))) {
 				type = SC_CARD_TYPE_PIV_II_PIVKEY;
+			}
+			else if (card->reader->atr_info.hist_bytes_len >= 6 &&
+					!(memcmp(card->reader->atr_info.hist_bytes, "TK\x00PIV", 6))) {
+				type = SC_CARD_TYPE_PIV_II_TOKEN2;
 			}
 			/* look for TLV historic data */
 			else if (card->reader->atr_info.hist_bytes_len > 0
@@ -5549,6 +5561,7 @@ static int piv_match_card_continued(sc_card_t *card)
 	switch (card->type) {
 		case SC_CARD_TYPE_PIV_II_NEO:
 		case SC_CARD_TYPE_PIV_II_YUBIKEY4:
+		case SC_CARD_TYPE_PIV_II_TOKEN2:
 			sc_format_apdu(card, &apdu, SC_APDU_CASE_2_SHORT, 0xFD, 0x00, 0x00);
 			apdu.lc = 0;
 			apdu.data = NULL;
@@ -5616,17 +5629,17 @@ static int piv_match_card_continued(sc_card_t *card)
 	}
 	sc_debug(card->ctx,SC_LOG_DEBUG_MATCH, "PIV_MATCH card->type:%d r2:%d CI:%08x r:%d\n", card->type, r2, priv->card_issues, r);
 
-	/* Read AID if needed for these cards types */
+	/* Read AID if not already read for these cards types */
 	if (!(priv->init_flags & PIV_INIT_AID_PARSED)) {
 		switch(card->type) {
 			case SC_CARD_TYPE_PIV_II_BASE:
-			case SC_CARD_TYPE_PIV_II_800_73_4:
+			case SC_CARD_TYPE_PIV_II_800_73_4: /* applies to 800-73-5 */
 				r2 = piv_find_aid(card);
 		}
 	}
 
 	/* If SM is supported, set SC_CARD_TYPE_PIV_II_800_73_4 */
-	if (priv->init_flags & PIV_INIT_AID_AC) {
+	if ((card->type > SC_CARD_TYPE_PIV_II_800_73_4) && priv->init_flags & PIV_INIT_AID_AC) {
 		card->type = SC_CARD_TYPE_PIV_II_800_73_4;
 	}
 
@@ -5634,7 +5647,7 @@ static int piv_match_card_continued(sc_card_t *card)
 
 #ifdef ENABLE_PIV_SM
 	/* Discovery object has pin policy. 800-74-4 bits, its at least SC_CARD_TYPE_PIV_II_800_73_4 */
-	if ((priv->pin_policy & (PIV_PP_OCC | PIV_PP_VCI_IMPL | PIV_PP_VCI_WITHOUT_PC)) != 0) {
+	if ((card->type < SC_CARD_TYPE_PIV_II_800_73_4 && priv->pin_policy & (PIV_PP_OCC | PIV_PP_VCI_IMPL | PIV_PP_VCI_WITHOUT_PC)) != 0) {
 		card->type = SC_CARD_TYPE_PIV_II_800_73_4;
 	}
 #endif
@@ -5674,8 +5687,13 @@ static int piv_match_card_continued(sc_card_t *card)
 				priv->card_issues |= CI_VERIFY_LC0_FAIL;
 			/* TODO may need to relocate when I get card to test */
 			if (priv->yubico_version >= 0x00050700)
-				priv->card_issues |= CI_RSA_4096 | CI_25519;
+				priv->card_issues |= CI_RSA_3072 | CI_RSA_4096 | CI_25519;
 			break;
+
+		case SC_CARD_TYPE_PIV_II_TOKEN2:
+			if (priv->yubico_version >= 0x00057000)
+				priv->card_issues |= CI_RSA_3072 | CI_RSA_4096 | CI_25519;
+                         break;
 
 		case SC_CARD_TYPE_PIV_II_GI_DE:
 		case SC_CARD_TYPE_PIV_II_OBERTHUR:
@@ -5684,10 +5702,19 @@ static int piv_match_card_continued(sc_card_t *card)
 			priv->card_issues |= 0; /* could add others here */
 			break;
 
-		case SC_CARD_TYPE_PIV_II_BASE:
 		case SC_CARD_TYPE_PIV_II_HIST:
-		case SC_CARD_TYPE_PIV_II_800_73_4:
 			priv->card_issues |= 0; /* could add others here */
+			break;
+
+		case SC_CARD_TYPE_PIV_II_BASE: /* i.e. unknown card */
+		case SC_CARD_TYPE_PIV_II_800_73_4: /* has 800-73-4 or 5 features */
+			/*
+			 * No clear cut way to identify a 800-73-4 from 800-73-5
+			 * 800-73-5 adds RSA 3072 and 800-78-5 says RSA 4096 is acceptable
+			 * So will say we support them as card issuer is responsible
+			 * for knowing what their card can actially do.
+			 */
+			priv->card_issues |= CI_RSA_3072 | CI_RSA_4096; /* could add others here */
 			break;
 
 		case SC_CARD_TYPE_PIV_II_GI_DE_DUAL_CAC:
@@ -5807,9 +5834,10 @@ static int piv_init(sc_card_t *card)
 
 	_sc_card_add_rsa_alg(card, 1024, flags, 0); /* mandatory */
 	_sc_card_add_rsa_alg(card, 2048, flags, 0); /* optional */
-	_sc_card_add_rsa_alg(card, 3072, flags, 0); /* optional */
+	if (priv->card_issues & CI_RSA_3072)
+		_sc_card_add_rsa_alg(card, 3072, flags, 0); /* before optional. 800-73-5 adds it */
 	if (priv->card_issues & CI_RSA_4096)
-		_sc_card_add_rsa_alg(card, 4096, flags, 0); /* some Yubikeys support this */
+		_sc_card_add_rsa_alg(card, 4096, flags, 0); /* some Yubikey and other cards support this */
 
 	if (!(priv->card_issues & CI_NO_EC)) {
 		int i;
@@ -5840,8 +5868,8 @@ static int piv_init(sc_card_t *card)
 	card->caps |=  SC_CARD_CAP_ISO7816_PIN_INFO;
 
 	/*
-	 * 800-73-3 cards may have discovery. "piv-like cards may or may not.
-	 * 800-73-4 with VCI must have it as it has the pin policy needed for VCI .
+	 * 800-73-3 cards may have discovery. "piv-like" cards may or may not.
+	 * 800-73-4 with VCI must have it as pin policy is from discovery object.
 	 */
 
 #ifdef ENABLE_PIV_SM
