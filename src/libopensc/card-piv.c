@@ -5712,7 +5712,7 @@ static int piv_match_card_continued(sc_card_t *card)
 			 * No clear cut way to identify a 800-73-4 from 800-73-5
 			 * 800-73-5 adds RSA 3072 and 800-78-5 says RSA 4096 is acceptable
 			 * So will say we support them as card issuer is responsible
-			 * for knowing what their card can actially do.
+			 * for knowing what their card can actually do.
 			 */
 			priv->card_issues |= CI_RSA_3072 | CI_RSA_4096; /* could add others here */
 			break;
@@ -5730,6 +5730,7 @@ static int piv_match_card_continued(sc_card_t *card)
 		case SC_CARD_TYPE_PIV_II_GENERIC:
 			priv->card_issues |= CI_VERIFY_LC0_FAIL
 				| CI_OTHER_AID_LOSE_STATE;
+			priv->card_issues |= CI_RSA_3072; /* Was optional for years and now in 800-73-5 */
 			break;
 
 		case SC_CARD_TYPE_PIV_II_PIVKEY:
