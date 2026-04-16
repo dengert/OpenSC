@@ -430,6 +430,7 @@ extern int	sc_pkcs15init_unwrap_key(struct sc_pkcs15_card *p15card, struct sc_pr
 extern struct sc_pkcs15init_operations *sc_pkcs15init_get_cryptoflex_ops(void);
 extern struct sc_pkcs15init_operations *sc_pkcs15init_get_cyberflex_ops(void);
 extern struct sc_pkcs15init_operations *sc_pkcs15init_get_cardos_ops(void);
+extern struct sc_pkcs15init_operations *sc_pkcs15init_get_jcop_ops(void);
 extern struct sc_pkcs15init_operations *sc_pkcs15init_get_starcos_ops(void);
 extern struct sc_pkcs15init_operations *sc_pkcs15init_get_oberthur_ops(void);
 extern struct sc_pkcs15init_operations *sc_pkcs15init_get_setcos_ops(void);

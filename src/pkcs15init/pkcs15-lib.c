@@ -144,6 +144,7 @@ static struct profile_operations {
 	{ "cyberflex", (void *) sc_pkcs15init_get_cyberflex_ops },
 	{ "cardos", (void *) sc_pkcs15init_get_cardos_ops },
 	{ "etoken", (void *) sc_pkcs15init_get_cardos_ops }, /* legacy */
+	{ "jcop", (void *) sc_pkcs15init_get_jcop_ops },
 	{ "starcos", (void *) sc_pkcs15init_get_starcos_ops },
 	{ "oberthur", (void *) sc_pkcs15init_get_oberthur_ops },
 	{ "openpgp", (void *) sc_pkcs15init_get_openpgp_ops },
