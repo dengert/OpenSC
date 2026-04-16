@@ -312,7 +312,7 @@ static int jcop_select_file(sc_card_t *card, const sc_path_t *path,
 }
 
 static int jcop_read_binary(sc_card_t *card, unsigned int idx,
-			    u8 * buf, size_t count, unsigned long flags) {
+			    u8 * buf, size_t count, unsigned long * flags) {
      struct jcop_private_data *drvdata=DRVDATA(card);
      struct sc_card_driver *iso_drv = sc_get_iso7816_driver();
      const struct sc_card_operations *iso_ops = iso_drv->ops;
