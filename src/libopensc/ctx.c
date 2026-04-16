@@ -181,6 +181,7 @@ static const struct _sc_driver_entry old_card_drivers[] = {
 	{ "cyberflex",	(void *(*)(void)) sc_get_cyberflex_driver },
 	{ "flex",       (void *(*)(void)) sc_get_cryptoflex_driver },
 	{ "mcrd",       (void *(*)(void)) sc_get_mcrd_driver },
+	{ "jcop",	(void *(*)(void)) sc_get_jcop_driver },
 	{ NULL, NULL }
 };
 // clang-format on

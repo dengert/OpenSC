@@ -90,6 +90,10 @@ enum {
 	SC_CARD_TYPE_OPENPGP_V3,
 	SC_CARD_TYPE_OPENPGP_GNUK,
 
+	/* jcop driver */
+	SC_CARD_TYPE_JCOP_BASE = 10000,
+	SC_CARD_TYPE_JCOP_GENERIC,
+
 	/* oberthur driver */
 	SC_CARD_TYPE_OBERTHUR_BASE = 11000,
 	SC_CARD_TYPE_OBERTHUR_GENERIC,
@@ -296,6 +300,7 @@ extern sc_card_driver_t *sc_get_setcos_driver(void);
 extern sc_card_driver_t *sc_get_starcos_driver(void);
 extern sc_card_driver_t *sc_get_tcos_driver(void);
 extern sc_card_driver_t *sc_get_openpgp_driver(void);
+extern sc_card_driver_t *sc_get_jcop_driver(void);
 extern sc_card_driver_t *sc_get_oberthur_driver(void);
 extern sc_card_driver_t *sc_get_belpic_driver(void);
 extern sc_card_driver_t *sc_get_atrust_acos_driver(void);
