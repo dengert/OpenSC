@@ -415,7 +415,7 @@ struct sc_cardctl_jcop_genkey  {
      sc_path_t pub_file_ref;
      sc_path_t pri_file_ref;
      unsigned char *	pubkey;
-     unsigned int	pubkey_len;
+     size_t		pubkey_len;
 };
 
 /*
