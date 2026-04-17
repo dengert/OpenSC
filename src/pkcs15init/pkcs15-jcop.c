@@ -169,10 +169,10 @@ jcop_create_key(sc_profile_t *profile, sc_pkcs15_card_t *p15card, sc_pkcs15_obje
 }
 
 static void
-jcop_bn2bin(unsigned char *dest, sc_pkcs15_bignum_t *bn, unsigned int size)
+jcop_bn2bin(unsigned char *dest, sc_pkcs15_bignum_t *bn, size_t size)
 {
         u8              *src;
-        unsigned int    n;
+        size_t n;
 
         assert(bn->len <= size);
         memset(dest, 0, size);
