@@ -189,7 +189,7 @@ static int jcop_get_default_key(sc_card_t *card,
 
 /* since the card is actually a javacard, we're expected to use ISO
    7816-4 direct application selection instead of reading the DIR
-   ourselves and selecting the AppDF by path. Since opensc doesn' do
+   ourselves and selecting the AppDF by path. Since opensc doesn't do
    that, I fake an MF containing the AppDF and a fixed DIR pointing at
    the fake AppDF. This has the added advantage of allowing
    opensc-explorer to be used with this driver */
