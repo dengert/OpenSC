@@ -334,7 +334,7 @@ static int jcop_read_binary(sc_card_t *card, unsigned int idx,
 	  } else {
 	       memcpy(buf, (u8 *)(ef_dir_contents + idx), count);
 	  }
-	  return count;
+	  return (int)count;
      }
      return iso_ops->read_binary(card, idx, buf, count, flags);
 }
@@ -368,7 +368,7 @@ static int jcop_list_files(sc_card_t *card, u8 *buf, size_t buflen) {
      if (buflen > 2 * (size_t)drvdata->nfiles)
 	  buflen=2*drvdata->nfiles;
      memcpy(buf, drvdata->filelist, buflen);
-     return buflen;
+     return (int)buflen;
 }
 
 static int sa_to_acl(sc_file_t *file, unsigned int operation, 
@@ -676,7 +676,7 @@ static int jcop_set_security_env(sc_card_t *card,
 	memcpy(p, env->file_ref.value, env->file_ref.len);
 	p += env->file_ref.len;
 
-        r = p - sbuf;
+        r = (int)(p - sbuf);
         apdu.lc = r;
         apdu.datalen = r;
         apdu.data = sbuf;
@@ -737,10 +737,10 @@ static int jcop_compute_signature(sc_card_t *card,
         r = sc_transmit_apdu(card, &apdu);
         LOG_TEST_RET(card->ctx, r, "APDU transmit failed");
         if (apdu.sw1 == 0x90 && apdu.sw2 == 0x00) {
-                int len = apdu.resplen > outlen ? outlen : apdu.resplen;
+                size_t len = apdu.resplen > outlen ? outlen : apdu.resplen;
 
                 memcpy(out, apdu.resp, len);
-                SC_FUNC_RETURN(card->ctx, SC_LOG_DEBUG_VERBOSE, len);
+                SC_FUNC_RETURN(card->ctx, SC_LOG_DEBUG_VERBOSE, (int)len);
         }
         SC_FUNC_RETURN(card->ctx, SC_LOG_DEBUG_VERBOSE, sc_check_sw(card, apdu.sw1, apdu.sw2));
 }
@@ -788,10 +788,10 @@ static int jcop_decipher(sc_card_t *card,
         r = sc_transmit_apdu(card, &apdu);
         LOG_TEST_RET(card->ctx, r, "APDU transmit failed");
         if (apdu.sw1 == 0x90 && apdu.sw2 == 0x00) {
-                int len = apdu.resplen > outlen ? outlen : apdu.resplen;
+                size_t len = apdu.resplen > outlen ? outlen : apdu.resplen;
 
                 memcpy(out, apdu.resp, len);
-                SC_FUNC_RETURN(card->ctx, SC_LOG_DEBUG_VERBOSE, len);
+                SC_FUNC_RETURN(card->ctx, SC_LOG_DEBUG_VERBOSE, (int)len);
         }
         SC_FUNC_RETURN(card->ctx, SC_LOG_DEBUG_VERBOSE, sc_check_sw(card, apdu.sw1, apdu.sw2));
 }
@@ -835,7 +835,7 @@ static int jcop_generate_key(sc_card_t *card, struct sc_cardctl_jcop_genkey *a) 
      memcpy(p, a->pri_file_ref.value, a->pri_file_ref.len);
      p += a->pri_file_ref.len;
      
-     r = p - sbuf;
+     r = (int)(p - sbuf);
 
      apdu.lc = r;
      apdu.datalen = r;
