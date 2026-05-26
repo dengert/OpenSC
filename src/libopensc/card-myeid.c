@@ -33,7 +33,7 @@
 /* TODO May want to replace ENABLE_PIV_SM with ENBLE_MYEID_SM
  * to turn off separate from card-piv.c
  */
-#if defined(ENABLE_PIV_SM) && defined(ENABLE_SM_NIST)
+#if defined(ENABLE_MYEID_SM_NIST) && defined(ENABLE_SM_NIST)
 #define MYEID_SM_NIST
 #include "sm/sm-nist.h"
 #endif /* MYEID_SM_NIST */
