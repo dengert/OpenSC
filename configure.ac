@@ -269,6 +269,14 @@ AC_ARG_ENABLE(
 	[enable_piv_sm_nist="yes"]
 )
 
+# use sm-nist in MYEID card driver
+AC_ARG_ENABLE(
+	[myeid-sm-nist],
+	[AS_HELP_STRING([--disable-myeid-sm-nist],[disable SM (sm/sm_nist) in MYEID card driver @<:@enabled@:>@])],
+	,
+	[enable_myeid_sm_nist="yes"]
+)
+
 AC_ARG_ENABLE(
 	[man],
 	[AS_HELP_STRING([--disable-man],[disable installation of manuals @<:@enabled for none Windows@:>@])],
@@ -883,6 +891,15 @@ if  test "${enable_piv_sm_nist}" = "yes"; then
 	fi
 fi
 
+if  test "${enable_myeid_sm_nist}" = "yes"; then
+	if test "${enable_sm}" = "yes" -a "${enable_openssl}" = "yes" -a "${enable_sm_nist}" = "yes"; then
+		AC_DEFINE([ENABLE_MYEID_SM_NIST], [1], [Enable PIV SM NIST])
+		# WIP enable_sm_nist will become the default
+	else
+		AC_MSG_WARN([ENABLE_MYEID_SM_NIST requires ENABLE_SM_NIST, ENABLE_SM and ENABLE_OPENSSL])
+	fi
+fi
+
 if test "${enable_openct}" = "yes"; then
 	PKG_CHECK_MODULES(
 		[OPENCT],
@@ -1262,6 +1279,7 @@ SM default module:       ${DEFAULT_SM_MODULE}
 SM default path:         $(eval eval eval echo "${DEFAULT_SM_MODULE_PATH}")
 SM sm-nist support:	 ${enable_sm_nist}
 PIV driver use sm-nist:  ${enable_piv_sm_nist}
+MYEID use sm-nist:       ${enable_myeid_sm_nist}
 DNIe UI support:         ${enable_dnie_ui}
 Notification support:    ${enable_notify}
 Code coverage:           ${enable_code_coverage}
