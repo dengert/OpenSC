@@ -649,10 +649,16 @@ myeid_create_key(struct sc_profile *profile, struct sc_pkcs15_card *p15card,
 			 * See Table 81 Secure Messaging Key FID
 			 * if no pin_reference, the default is FFFFFF
 			 * TODO only check for ec
+			 * 
 			 */
-			 if (id->len == 1 && (object->type == SC_PKCS15_TYPE_PRKEY_RSA || object->type == SC_PKCS15_TYPE_PRKEY_EC) &&
-					(id->value[0] == 0x27 || id->value[0] == 0x2E))
+			 if (id->len == 1 &&
+					(object->type == SC_PKCS15_TYPE_PRKEY_RSA ||
+					object->type == SC_PKCS15_TYPE_PRKEY_EC) &&
+					(id->value[0] == 0x27 || id->value[0] == 0x2E)) {
 				sec_attrs[0] |= 0xF0;
+				sec_attrs[1] |= 0xF0;
+			}
+
 			sc_file_set_sec_attr(file, sec_attrs, sizeof(sec_attrs));
 		}
 

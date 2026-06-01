@@ -225,9 +225,12 @@ myeid_get_card_sm_params(struct sc_card *card, sc_path_t *path_cert_signer, u8 *
 	 * Tag 0x81 l=1  V=1 is Exclusize Pin Mode
 	 * Tag A0 has 1 or 2 sub tags with 0x27 or 0x2E with FID of CVCs
 	 * We only support the first one 
-	 * for example:with csid 0x27
+	 * for example:with csid 0x27 from OpenSC provisioned card: 
 	 * 80 02 43 06 A0 0B 80 01 27 81 02 43 05 82 02 4B 05
 	 * The CVC certificate at path 4B 05 is provided as response to SM authenticate  
+	 * Aventra test card 5:
+	 * 80 02 5C 00 A0 0B 80 01 2E 81 02 5C 2E 82 02 55
+	 * 2E A0 0B 80 01 27 81 02 5C 27 82 02 55 27
 	 */
 
 	if (apdu.resplen < 17 || apdu.resp[0] != 0x80 || apdu.resp[1] != 0x02 || apdu.resp[4] != 0xA0) {
@@ -238,7 +241,7 @@ myeid_get_card_sm_params(struct sc_card *card, sc_path_t *path_cert_signer, u8 *
 	path_cert_signer->value[4] = apdu.resp[2];
 	path_cert_signer->value[5] = apdu.resp[3];
 	*csid = apdu.resp[8];
-	if (*csid != 0x27 || *csid != 0x2E) {
+	if (*csid != 0x27 && *csid != 0x2E) {
 		sc_log(card->ctx,  "csID invalid");
 		r = SC_ERROR_INVALID_ASN1_OBJECT;
 		goto err;
@@ -372,15 +375,21 @@ static int myeid_card_reader_lock_obtained(sc_card_t *card, int was_reset)
 		goto err;
 	}
 
+	if (priv->init_flags & MYEID_INIT_IN_READER_LOCK_OBTAINED) {
+		sc_log(card->ctx, "Recursive call, return");
+		r = 0;
+		goto err;
+	}
+
 	priv->init_flags |= MYEID_INIT_IN_READER_LOCK_OBTAINED;
 
-#if 0
+#ifdef MYEID_SM_NIST
 	/* Ensure that the MyEID applet is selected. */
+	if ((r < 0 || was_reset > 0) && priv->sm_params.flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
 	r = iso7816_select_aid(card, myeid_aid.value, myeid_aid.len, NULL, NULL);
 		LOG_TEST_GOTO_ERR(card->ctx, r, "Failed to select MyEID applet.");
-#endif /* 0 */
+	}
 
-#ifdef MYEID_SM_NIST
 	sc_log(card->ctx, "(was_reset: %d priv->sm_parms.flags: 0x%08lX", was_reset, priv->sm_params.flags);
 	/* If SM was active, reauthenticate as other process may be using SM too. */
 
