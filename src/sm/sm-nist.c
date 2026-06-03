@@ -1391,6 +1391,8 @@ sm_nist_start(sc_card_t *card, sm_nist_params_t *params)
 
 	SC_FUNC_CALLED(card->ctx, SC_LOG_DEBUG_VERBOSE);
 
+	SC_FUNC_CALLED(card->ctx, SC_LOG_DEBUG_VERBOSE);
+
 	if (!params) {
 		sc_log(card->ctx, "sm_nist_params required parameter is NULL");
 		r = SC_ERROR_INVALID_ARGUMENTS;
