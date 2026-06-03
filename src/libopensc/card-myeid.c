@@ -1513,27 +1513,7 @@ myeid_compute_signature(struct sc_card *card, const u8 * data, size_t datalen,
 
 	apdu.data = sbuf;
 
-#ifdef MYEID_SM_NIST
-		unsigned long saved_caps = card->caps;
-		size_t saved_max_send_size = card->max_send_size;
-		size_t saved_max_recv_size = card->max_recv_size;
-
-		card->caps |= SC_CARD_CAP_APDU_EXT;
-		card->max_send_size = MYEID_MAX_EXT_APDU_BUFFER_SIZE;
-		card->max_recv_size = MYEID_MAX_EXT_APDU_BUFFER_SIZE;
-	/* FIXME Need to turn off chaining and to get around */
-	apdu.flags &= ~SC_APDU_FLAGS_CHAINING;
-	apdu.cse |= SC_APDU_EXT;
-	apdu.le = apdu.resplen;
-	apdu.lc = apdu.datalen;
-#endif /* MYEID_SM_NIST */
-
 	r = sc_transmit_apdu(card, &apdu);
-#ifdef MYEID_SM_NIST
-	card->caps = saved_caps;
-	card->max_send_size = saved_max_send_size;
-	card->max_recv_size = saved_max_recv_size;
-#endif /* MYEID_SM_NIST */
 
 	LOG_TEST_RET(ctx, r, "APDU transmit failed");
 	r = sc_check_sw(card, apdu.sw1, apdu.sw2);
