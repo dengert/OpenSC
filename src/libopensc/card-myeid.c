@@ -267,6 +267,7 @@ myeid_setup_sm_nist(struct sc_card *card)
 	LOG_FUNC_CALLED(card->ctx);
 
 	/* TODO There are still problems with using sm-nist from myeid so use this for testing */
+	/* any other value then NULL or 'n' will use some SM */
 	use_sm = getenv("MYEID_USE_SM");
 	if (use_sm == NULL || use_sm[0] == 'n') { /* no or never */
 		sc_log (card->ctx, "Not using SM");
@@ -293,7 +294,6 @@ myeid_setup_sm_nist(struct sc_card *card)
 	SC_TEST_GOTO_ERR(card->ctx, SC_LOG_DEBUG_VERBOSE, r, "failed to read signer_cert_der");
 
 	priv->sm_params.flags = NIST_SM_FLAGS_SM_CERT_SIGNER_PRESENT;
-	/* TODO this implies card has reader_lock_obtained routine */
 	priv->sm_params.flags |= NIST_SM_FLAGS_DEFER_OPEN;
 
 	r = sm_nist_start(card, &priv->sm_params);
@@ -385,15 +385,49 @@ static int myeid_card_reader_lock_obtained(sc_card_t *card, int was_reset)
 
 #ifdef MYEID_SM_NIST
 	/* Ensure that the MyEID applet is selected. */
-	if ((r < 0 || was_reset > 0) && priv->sm_params.flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
-	r = iso7816_select_aid(card, myeid_aid.value, myeid_aid.len, NULL, NULL);
-		LOG_TEST_GOTO_ERR(card->ctx, r, "Failed to select MyEID applet.");
+	if ( was_reset > 0 && priv->sm_params.flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
+		unsigned long saved_flags = priv->sm_params.flags;
+
+		priv->sm_params.flags |= NIST_SM_FLAGS_SM_CLOSE_ACCEPT_ERRORS;
+		priv->sm_params.flags |= NIST_SM_FLAGS_FORCE_SM_ON;
+		r = iso7816_select_aid(card, myeid_aid.value, myeid_aid.len, NULL, NULL);
+		priv->sm_params.flags = saved_flags; /* restore state */
+	}
+
+
+	/* TODO test login and SM status */
+	
+	if ((r < 0 || was_reset != 0) && priv->sm_params.flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
+		/* If SM was active, test if SM connection is still valid to card using VERIFY 00 20 00 XX
+		 * If reply is 90 00  or 63 Cx Our SM connection must still be valid to PIV applet.
+		 * and we get tries left too.
+		 * if not select aid reauthenticate as other process may be using SM too
+		 */
+		sc_apdu_t apdu;
+		unsigned long saved_flags = priv->sm_params.flags;
+
+		sc_format_apdu(card, &apdu, SC_APDU_CASE_1, 0x20, 0x00, 0x01);
+		priv->sm_params.flags |= NIST_SM_FLAGS_SM_CLOSE_ACCEPT_ERRORS;
+		priv->sm_params.flags |= NIST_SM_FLAGS_FORCE_SM_ON;
+		r = sc_transmit_apdu(card, &apdu);
+		priv->sm_params.flags = saved_flags; /* restore state */
+		if (r >= 0) {
+			if (apdu.sw1 == 0x90 && apdu.sw2 == 0x00) {
+				/* priv->logged_in = SC_PIN_STATE_LOGGED_IN; */
+			} else if (apdu.sw1 == 0x63) {
+				/* priv->logged_in = SC_PIN_STATE_LOGGED_OUT; */
+				/* priv->tries_left = apdu.sw1 & 0x0F; */
+			} else {
+				r = SC_ERROR_SM_INVALID_SESSION_KEY;
+				/* priv->logged_in = SC_PIN_STATE_UNKNOWN; */
+			}
+		}
 	}
 
 	sc_log(card->ctx, "(was_reset: %d priv->sm_parms.flags: 0x%08lX", was_reset, priv->sm_params.flags);
 	/* If SM was active, reauthenticate as other process may be using SM too. */
 
-	if (priv->sm_params.flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
+	if (r < 0 && priv->sm_params.flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
 		priv->sm_params.flags |= NIST_SM_FLAGS_DEFER_OPEN;
 		r = sm_nist_open(card);
 		if (r < 0) {
@@ -1478,7 +1512,29 @@ myeid_compute_signature(struct sc_card *card, const u8 * data, size_t datalen,
 	apdu.datalen = datalen + pad_chars;
 
 	apdu.data = sbuf;
+
+#ifdef MYEID_SM_NIST
+		unsigned long saved_caps = card->caps;
+		size_t saved_max_send_size = card->max_send_size;
+		size_t saved_max_recv_size = card->max_recv_size;
+
+		card->caps |= SC_CARD_CAP_APDU_EXT;
+		card->max_send_size = MYEID_MAX_EXT_APDU_BUFFER_SIZE;
+		card->max_recv_size = MYEID_MAX_EXT_APDU_BUFFER_SIZE;
+	/* FIXME Need to turn off chaining and to get around */
+	apdu.flags &= ~SC_APDU_FLAGS_CHAINING;
+	apdu.cse |= SC_APDU_EXT;
+	apdu.le = apdu.resplen;
+	apdu.lc = apdu.datalen;
+#endif /* MYEID_SM_NIST */
+
 	r = sc_transmit_apdu(card, &apdu);
+#ifdef MYEID_SM_NIST
+	card->caps = saved_caps;
+	card->max_send_size = saved_max_send_size;
+	card->max_recv_size = saved_max_recv_size;
+#endif /* MYEID_SM_NIST */
+
 	LOG_TEST_RET(ctx, r, "APDU transmit failed");
 	r = sc_check_sw(card, apdu.sw1, apdu.sw2);
 	LOG_TEST_RET(ctx, r, "compute_signature failed");
