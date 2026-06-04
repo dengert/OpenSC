@@ -68,6 +68,13 @@
 
 #define MYEID_SET_ENABLE_CRYPTO		0x0001
 
+/*
+ * Aventra MyEID PKI Smart Card Reference manual Ver. 3.0.6 and 3.0.8
+ * which apply to card version 4.9.10 and 5.0.0 says
+ * max send size is 768 and max recieve size is 32676
+ * and all commands can use extended apdus.
+ */
+
 #define MYEID_MAX_EXT_APDU_BUFFER_SIZE	(MYEID_MAX_RSA_KEY_LEN/8+16)
 
 #define MYEID_INIT_IN_READER_LOCK_OBTAINED        0x00000010u
@@ -514,6 +521,13 @@ static int myeid_init(struct sc_card *card)
 			sc_log(card->ctx, "Failed to get card capabilities. Using default max ECC key length 256.");
 	    }
 	}
+
+	if (card->version.fw_major >= 49) {
+		card->caps |= SC_CARD_CAP_APDU_EXT;
+		card->max_send_size = 768;
+		card->max_recv_size = 32767;
+	}
+
 
 	flags = SC_ALGORITHM_RSA_RAW | SC_ALGORITHM_ONBOARD_KEY_GEN;
 	if (priv->disable_hw_pkcs1_padding == 0)
@@ -1502,16 +1516,20 @@ myeid_compute_signature(struct sc_card *card, const u8 * data, size_t datalen,
 	/* INS: 0x2A  PERFORM SECURITY OPERATION
 		* P1:  0x9E  Resp: Digital Signature
 		* P2:  0x9A  Cmd: Input for Digital Signature */
-	sc_format_apdu(card, &apdu, SC_APDU_CASE_4_SHORT, 0x2A, 0x9E, 0x9A);
-	apdu.flags |= SC_APDU_FLAGS_CHAINING;
+	sc_format_apdu(card, &apdu, SC_APDU_CASE_4, 0x2A, 0x9E, 0x9A);
 	apdu.resp = rbuf;
 	apdu.resplen = sizeof(rbuf);
-	apdu.le = 256;
-	memcpy(sbuf + pad_chars, data, datalen);
-	apdu.lc = datalen + pad_chars;
 	apdu.datalen = datalen + pad_chars;
-
+	apdu.lc = datalen + pad_chars;
+	memcpy(sbuf + pad_chars, data, datalen);
 	apdu.data = sbuf;
+	/* OpenSC will use extended if needed */
+	if (card->version.fw_major >= 49) {
+		apdu.le = apdu.resplen;
+	} else {
+		apdu.flags |= SC_APDU_FLAGS_CHAINING;
+		apdu.le = 256;
+	}
 
 	r = sc_transmit_apdu(card, &apdu);
 
@@ -1646,7 +1664,7 @@ static int myeid_transmit_decipher(struct sc_card *card, u8 p1, u8 p2,
 	 * P1:  0x80  Resp: Plain value
 	 * P2:  0x84  Cmd: Cryptogram (no padding byte)
 	 * P2:  0x86  Cmd: Padding indicator byte followed by cryptogram */
-	sc_format_apdu(card, &apdu, p1 ? SC_APDU_CASE_4_SHORT : SC_APDU_CASE_3_SHORT, 0x2A, p1, p2);
+	sc_format_apdu(card, &apdu, p1 ? SC_APDU_CASE_4 : SC_APDU_CASE_3, 0x2A, p1, p2);
 	if (p2 == 0x86) {
 		if (crgram_len+1 > sizeof(sbuf))
 			LOG_FUNC_RETURN(card->ctx, SC_ERROR_INVALID_ARGUMENTS);
@@ -1668,7 +1686,8 @@ static int myeid_transmit_decipher(struct sc_card *card, u8 p1, u8 p2,
 	if (p2 == 0x86 && crgram_len == 256 && priv && (!priv->cap_chaining || (card->version.fw_major == 45 && priv->sec_env != NULL && priv->sec_env->operation == SC_SEC_OPERATION_UNWRAP))) {
 		r = myeid_transmit_decipher_pi_split(card, &apdu, sbuf);
 	} else {
-		apdu.flags |= SC_APDU_FLAGS_CHAINING;
+		if (card->version.fw_major < 49)
+			apdu.flags |= SC_APDU_FLAGS_CHAINING;
 		r = sc_transmit_apdu(card, &apdu);
 	}
 	LOG_TEST_RET(card->ctx, r, "APDU transmit failed");
