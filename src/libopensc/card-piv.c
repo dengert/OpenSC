@@ -782,6 +782,42 @@ piv_sm_nist_pre_transmit_callback(sc_card_t *card, sc_apdu_t *apdu)
 }
 
 static int
+piv_sm_nist_pre_transmit_callback(sc_card_t *card, sc_apdu_t *apdu)
+{
+	int r = 0;
+	/* piv_private_data_t *priv = PIV_DATA(card) */;
+
+	SC_FUNC_CALLED(card->ctx, SC_LOG_DEBUG_VERBOSE);
+
+	sc_debug(card->ctx, SC_LOG_DEBUG_SM, "callback for ins: %2.2x", apdu->ins);
+
+	/* May need additional cases */
+	switch (apdu->ins) {
+	case 0xC0: /* GET RESPONSE */
+		r = SC_ERROR_SM_NOT_APPLIED;
+		break;
+	case 0xCB: /* GET DATA piv_get_data may have already set in clear */
+		break;
+	case 0xDB: /* PUT DATA */
+		/* TODO need tests like for GET DATA */
+		break;
+	case 0x20: /* VERIFY */
+		break;
+	case 0x24: /* CHANGE REFERENCE DATA */
+		break;
+	case 0x86: /* GENERAL AUTHENTICATE */
+	case 0x87: /* GENERAL AUTHENTICATE */
+		break;
+	default: /* just issue the plain apdu */
+		sc_debug(card->ctx, SC_LOG_DEBUG_SM, "Found non PIV ins:%2.2x", apdu->ins);
+		r = SC_ERROR_SM_NOT_APPLIED;
+		break;
+	}
+
+	SC_FUNC_RETURN(card->ctx, SC_LOG_DEBUG_SM, r);
+}
+
+static int
 piv_parse_pairing_code(sc_card_t *card, const char *option)
 {
 	size_t i;
@@ -943,10 +979,10 @@ piv_general_io(sc_card_t *card, int ins, int p1, int p2,
 	}
 	apdu.resp = recvbuf;
 
-	/* with new adpu.c and chaining, this actually reads the whole object */
+	/* with new apdu.c and chaining, this actually reads the whole object */
 	r = sc_transmit_apdu(card, &apdu);
 
-	/* adpu will not have sw1,sw2 set because sc_sm_single_transmit called sc_sm_stop, */
+	/* apdu will not have sw1,sw2 set because sc_sm_single_transmit called sc_sm_stop, */
 	if (r < 0) {
 		sc_log(card->ctx, "Transmit failed");
 		goto err;
