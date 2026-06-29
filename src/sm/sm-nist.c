@@ -1428,7 +1428,9 @@ sm_nist_start(sc_card_t *card, sm_nist_params_t *params)
 
 	if (params->signer_cert_der && params->signer_cert_der_len) {
 		const u8 *p = params->signer_cert_der;
-		int len = params->signer_cert_der_len;
+		int len;
+
+		len = (int)params->signer_cert_der_len;
 
 		if (params->flags & NIST_SM_FLAGS_SM_CERT_SIGNER_COMPRESSED) {
 #ifdef ENABLE_ZLIB
@@ -1518,7 +1520,7 @@ err:
 /* reader_lock_obtained routine can check if NIST SM is still active and restart it */
 int
 sm_nist_check_sm_working(sc_card_t *card, sm_nist_params_t *sm_params,
-		int was_reset, u8 *aid, int aid_len, u8 pin_ref, int *logged_in, int *tries_left)
+		int was_reset, u8 *aid, size_t aid_len, u8 pin_ref, int *logged_in, int *tries_left)
 {
 	int r;
 	//struct sm_nist_private_data *priv = SM_NIST_PRIV_CARD;
@@ -1530,7 +1532,7 @@ sm_nist_check_sm_working(sc_card_t *card, sm_nist_params_t *sm_params,
 	sm_params->flags &= ~NIST_SM_FLAGS_FORCE_IN_CLEAR;
 
 
-	if (r >= 0 && was_reset == 0 && sm_params->flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
+	if (r >= 0 && was_reset == 0 && pin_ref != 0 && sm_params->flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
 		/* If SM was active, test if SM connection is still valid to card using VERIFY 00 20 00 XX
 		 * If reply is 90 00  or 63 Cx Our SM connection must still be valid to PIV applet.
 		 * and we get tries left too.
