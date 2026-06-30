@@ -133,6 +133,23 @@ typedef struct myeid_card_caps {
 	unsigned short max_ecc_key_length;
 } myeid_card_caps_t;
 
+#ifdef MYEID_SM_NIST
+/*
+ * SW internal apdu response table.
+ *
+ * Override APDU response error codes from iso7816.c to allow
+ * handling of SM specific error
+ */
+static const struct sc_card_error sm_nist_errors[] = {
+	{0x6882, SC_ERROR_SM, "SM not supported"}, 
+	{0x6982, SC_ERROR_SM_NO_SESSION_KEYS, "SM Security status not satisfied"}, /* no session established */
+	{0x6987, SC_ERROR_SM, "Expected SM Data Object missing"},
+	{0x6988, SC_ERROR_SM_INVALID_SESSION_KEY, "SM Data Object incorrect"}, /* other process interference */
+	{0, 0, NULL}
+};
+#endif /* MYEID_SM_NIST */
+
+
 static struct myeid_supported_ec_curves {
 	char *curve_name;
 	struct sc_object_id curve_oid;
@@ -184,6 +201,27 @@ myeid_set_session_flags(struct sc_card *card, unsigned short *flags)
 end:
 	sc_unlock(card);
 	LOG_FUNC_RETURN(card->ctx, r);
+}
+
+static int
+myeid_check_sw(struct sc_card *card, unsigned int sw1, unsigned int sw2)
+{
+#ifdef MYEID_SM_NIST
+	int i;
+	struct sc_card_driver *iso_drv = sc_get_iso7816_driver();
+
+	/* Note 6982 is map to SC_ERROR_SM_NO_SESSION_KEYS but iso maps it to SC_ERROR_SECURITY_STATUS_NOT_SATISFIED */
+	/* we do this because 6982 could also mean a verify is not allowed over contactless without VCI */
+	/* we stashed the sw1 and sw2 above for verify */
+	for (i = 0; sm_nist_errors[i].SWs != 0; i++) {
+		if (sm_nist_errors[i].SWs == ((sw1 << 8) | sw2)) {
+			sc_log(card->ctx, " SM NIST ERROR FOUND: %2.2x %s", sm_nist_errors[i].SWs, sm_nist_errors[i].errorstr);
+			return sm_nist_errors[i].errorno;
+		}
+	}
+#endif /* MYEID_SM_NIST */
+
+	return iso_drv->ops->check_sw(card, sw1, sw2);
 }
 
 #ifdef MYEID_SM_NIST
@@ -259,6 +297,48 @@ err:
 	sc_unlock(card);
 	LOG_FUNC_RETURN(card->ctx, r);
 }
+
+static int
+myeid_sm_nist_pre_transmit_callback(sc_card_t *card, sc_apdu_t *apdu)
+{
+	int r = 0; /* do SM */
+
+	SC_FUNC_CALLED(card->ctx, SC_LOG_DEBUG_VERBOSE);
+
+	sc_debug(card->ctx, SC_LOG_DEBUG_SM, "callback for ins: %2.2x", apdu->ins);
+
+	/* May need additional cases */
+	/* Msy need to check if card is activated or not */
+	switch (apdu->ins) {
+	case 0xC0: /* GET RESPONSE */
+	case 0x44: /* activate card  in clear? */
+	case 0xA4: /* select file or AID */
+		r = SC_ERROR_SM_NOT_APPLIED;
+		break;
+	case 0xCA: /* GET DATA */
+	case 0xDA: /* PUT DATA */
+	case 0x20: /* VERIFY */
+	case 0x22: /* PSO */
+	case 0x24: /* CHANGE REFERENCE DATA */
+	case 0x2A: /* decipher? */
+	case 0x2E: /* logout */
+	case 0x46: /* store key */
+	case 0x86: /* GENERAL AUTHENTICATE */
+	case 0x87: /* GENERAL AUTHENTICATE */
+	case 0xB0: /* read binary */
+	case 0xE0: /* create file */
+	case 0xE4: /* delete file */
+		r = 0;
+		break;
+	default: /* just issue the plain apdu  need to look for these from pkcs15init */
+		sc_debug(card->ctx, SC_LOG_DEBUG_SM, "Found non PIV ins:%2.2x", apdu->ins);
+		r = SC_ERROR_SM_NOT_APPLIED;
+		break;
+	}
+
+	SC_FUNC_RETURN(card->ctx, SC_LOG_DEBUG_SM, r);
+}
+
 static int
 myeid_setup_sm_nist(struct sc_card *card)
 {
@@ -273,7 +353,6 @@ myeid_setup_sm_nist(struct sc_card *card)
 
 	LOG_FUNC_CALLED(card->ctx);
 
-	/* TODO There are still problems with using sm-nist from myeid so use this for testing */
 	/* any other value then NULL or 'n' will use some SM */
 	use_sm = getenv("MYEID_USE_SM");
 	if (use_sm == NULL || use_sm[0] == 'n') { /* no or never */
@@ -302,6 +381,7 @@ myeid_setup_sm_nist(struct sc_card *card)
 
 	priv->sm_params.flags = NIST_SM_FLAGS_SM_CERT_SIGNER_PRESENT;
 	priv->sm_params.flags |= NIST_SM_FLAGS_DEFER_OPEN;
+	priv->sm_params.sm_nist_pre_transmit_callback = myeid_sm_nist_pre_transmit_callback;
 
 	r = sm_nist_start(card, &priv->sm_params);
 
@@ -315,6 +395,7 @@ err:
 	sc_file_free(file);
 	LOG_FUNC_RETURN(card->ctx, r);
 }
+
 #endif /* MYEID_SM_NIST */
 
 static int myeid_match_card(struct sc_card *card)
@@ -375,10 +456,10 @@ static int myeid_card_reader_lock_obtained(sc_card_t *card, int was_reset)
 
 	/* We have a PCSC transaction and sc_lock */
 	/* note myeid_init will hold a lock till it is done */
-	if (priv == NULL || priv->driver_state == DRIVER_STATE_MATCH) {
+	if (priv == NULL || priv->driver_state != DRIVER_STATE_NORMAL) {
 		sc_debug(card->ctx, SC_LOG_DEBUG_VERBOSE,
-			priv ? "DRIVER_STATE_MATCH" : "priv==NULL");
-		r = 0; /* do nothing, piv_match will take care of it */
+			priv ? "!DRIVER_STATE_NORMAL" : "priv=NULL");
+		r = 0; /* do nothing, myeid_match or myeid_init will take care of it */
 		goto err;
 	}
 
@@ -390,62 +471,13 @@ static int myeid_card_reader_lock_obtained(sc_card_t *card, int was_reset)
 
 	priv->init_flags |= MYEID_INIT_IN_READER_LOCK_OBTAINED;
 
-#ifdef MYEID_SM_NIST
-	/* Ensure that the MyEID applet is selected. */
-	if ( was_reset > 0 && priv->sm_params.flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
-		unsigned long saved_flags = priv->sm_params.flags;
-
-		priv->sm_params.flags |= NIST_SM_FLAGS_SM_CLOSE_ACCEPT_ERRORS;
-		priv->sm_params.flags |= NIST_SM_FLAGS_FORCE_SM_ON;
-		r = iso7816_select_aid(card, myeid_aid.value, myeid_aid.len, NULL, NULL);
-		priv->sm_params.flags = saved_flags; /* restore state */
-	}
-
-
-	/* TODO test login and SM status */
-	
-	if ((r < 0 || was_reset != 0) && priv->sm_params.flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
-		/* If SM was active, test if SM connection is still valid to card using VERIFY 00 20 00 XX
-		 * If reply is 90 00  or 63 Cx Our SM connection must still be valid to PIV applet.
-		 * and we get tries left too.
-		 * if not select aid reauthenticate as other process may be using SM too
-		 */
-		sc_apdu_t apdu;
-		unsigned long saved_flags = priv->sm_params.flags;
-
-		sc_format_apdu(card, &apdu, SC_APDU_CASE_1, 0x20, 0x00, 0x01);
-		priv->sm_params.flags |= NIST_SM_FLAGS_SM_CLOSE_ACCEPT_ERRORS;
-		priv->sm_params.flags |= NIST_SM_FLAGS_FORCE_SM_ON;
-		r = sc_transmit_apdu(card, &apdu);
-		priv->sm_params.flags = saved_flags; /* restore state */
-		if (r >= 0) {
-			if (apdu.sw1 == 0x90 && apdu.sw2 == 0x00) {
-				/* priv->logged_in = SC_PIN_STATE_LOGGED_IN; */
-			} else if (apdu.sw1 == 0x63) {
-				/* priv->logged_in = SC_PIN_STATE_LOGGED_OUT; */
-				/* priv->tries_left = apdu.sw1 & 0x0F; */
-			} else {
-				r = SC_ERROR_SM_INVALID_SESSION_KEY;
-				/* priv->logged_in = SC_PIN_STATE_UNKNOWN; */
-			}
-		}
-	}
-
-	sc_log(card->ctx, "(was_reset: %d priv->sm_parms.flags: 0x%08lX", was_reset, priv->sm_params.flags);
-	/* If SM was active, reauthenticate as other process may be using SM too. */
-
-	if (r < 0 && priv->sm_params.flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
-		priv->sm_params.flags |= NIST_SM_FLAGS_DEFER_OPEN;
-		r = sm_nist_open(card);
-		if (r < 0) {
-			/* If user said use SM always and SM failed - Error */
-			sc_log(card->ctx, "Attempt to restart or skip sm-nist");
-			if (priv->sm_params.flags & NIST_SM_FLAGS_ALWAYS) {
-				r = SC_ERROR_SM_NOT_INITIALIZED;
-				goto err;
-			}
-		}
-	}
+#ifdef MYEID_SM_NIST_XXXXXXX
+	/* check AID then check if SM session works, and restart if needed */
+	r = sm_nist_check_sm_working(card, &priv->sm_params, was_reset, myeid_aid.value, myeid_aid.len,
+                         0, NULL, NULL); /* FIXME use 0 to not test, should work with  1 for */
+#else
+	if (r < 0 || was_reset > 0)
+	        r = iso7816_select_aid(card, myeid_aid.value, myeid_aid.len, NULL, NULL);
 #endif /* MYEID_SM_NIST */
 
 	if (r < 0) /* bad error return will show up in sc_lock as error*/
@@ -2183,7 +2215,8 @@ static int myeid_finish(sc_card_t * card)
 	struct myeid_private_data *priv = (struct myeid_private_data *) card->drv_data;
 
 #ifdef MYEID_SM_NIST
-	/* TODO may need to cleanup sm */
+	if (card->sm_ctx.ops.close)
+		card->sm_ctx.ops.close(card);
 	sm_nist_params_cleanup(&priv->sm_params);
 #endif
 
@@ -2464,6 +2497,7 @@ static struct sc_card_driver * sc_get_driver(void)
 	myeid_ops.set_security_env	= myeid_set_security_env;
 	myeid_ops.compute_signature	= myeid_compute_signature;
 	myeid_ops.decipher		= myeid_decipher;
+	myeid_ops.check_sw		= myeid_check_sw;
 	myeid_ops.process_fci		= myeid_process_fci;
 	myeid_ops.card_ctl		= myeid_card_ctl;
 	myeid_ops.pin_cmd		= myeid_pin_cmd;
