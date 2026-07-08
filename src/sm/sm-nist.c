@@ -1524,11 +1524,14 @@ sm_nist_check_sm_working(sc_card_t *card, sm_nist_params_t *sm_params,
 {
 	int r;
 	//struct sm_nist_private_data *priv = SM_NIST_PRIV_CARD;
+	u8 rbuf[256];
+	size_t rbuflen;
 
 	SC_FUNC_CALLED(card->ctx, SC_LOG_DEBUG_VERBOSE);
 
 	sm_params->flags |= NIST_SM_FLAGS_FORCE_IN_CLEAR;
-	r = iso7816_select_aid(card, aid, aid_len, NULL, NULL);
+	rbuflen = sizeof(rbuf);
+	r = iso7816_select_aid(card, aid, aid_len, rbuf, &rbuflen);
 	sm_params->flags &= ~NIST_SM_FLAGS_FORCE_IN_CLEAR;
 
 
@@ -1572,7 +1575,8 @@ sm_nist_check_sm_working(sc_card_t *card, sm_nist_params_t *sm_params,
 
 	if ((r < 0 || was_reset > 0) && sm_params->flags & NIST_SM_FLAGS_SM_IS_ACTIVE) {
 		sm_params->flags |= NIST_SM_FLAGS_FORCE_IN_CLEAR;
-		r = iso7816_select_aid(card, aid, aid_len, NULL, NULL);
+		rbuflen = sizeof(rbuf);
+		r = iso7816_select_aid(card, aid, aid_len, rbuf, &rbuflen);
 		sm_params->flags &= ~NIST_SM_FLAGS_FORCE_IN_CLEAR;
 		if (r < 0) {
 			sc_debug(card->ctx, SC_LOG_DEBUG_SM, "SM r: %d", r);
