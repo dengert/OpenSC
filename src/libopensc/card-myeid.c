@@ -71,7 +71,7 @@
 /*
  * Aventra MyEID PKI Smart Card Reference manual Ver. 3.0.6 and 3.0.8
  * which apply to card version 4.9.10 and 5.0.0 says
- * max send size is 768 and max recieve size is 32676
+ * max send size is 768 and max receive size is 32676
  * and all commands can use extended apdus.
  */
 
@@ -307,27 +307,29 @@ myeid_sm_nist_pre_transmit_callback(sc_card_t *card, sc_apdu_t *apdu)
 
 	sc_debug(card->ctx, SC_LOG_DEBUG_SM, "callback for ins: %2.2x", apdu->ins);
 
+	/* Not called if MYEID_SM_USE = always or MYEID_SM_USE = never */
 	/* May need additional cases */
-	/* Msy need to check if card is activated or not */
+	/* May need to check if card is activated or not */
+	/* For now, do not use SM for provisioning */
 	switch (apdu->ins) {
 	case 0xC0: /* GET RESPONSE */
 	case 0x44: /* activate card  in clear? */
 	case 0xA4: /* select file or AID */
-		r = SC_ERROR_SM_NOT_APPLIED;
-		break;
 	case 0xCA: /* GET DATA */
 	case 0xDA: /* PUT DATA */
+	case 0x46: /* store key */
+	case 0xB0: /* read binary */
+	case 0xE0: /* create file */
+	case 0xE4: /* delete file */
+		r = SC_ERROR_SM_NOT_APPLIED;
+		break;
 	case 0x20: /* VERIFY */
 	case 0x22: /* PSO */
 	case 0x24: /* CHANGE REFERENCE DATA */
 	case 0x2A: /* decipher? */
 	case 0x2E: /* logout */
-	case 0x46: /* store key */
 	case 0x86: /* GENERAL AUTHENTICATE */
 	case 0x87: /* GENERAL AUTHENTICATE */
-	case 0xB0: /* read binary */
-	case 0xE0: /* create file */
-	case 0xE4: /* delete file */
 		r = 0;
 		break;
 	default: /* just issue the plain apdu  need to look for these from pkcs15init */
@@ -353,14 +355,16 @@ myeid_setup_sm_nist(struct sc_card *card)
 
 	LOG_FUNC_CALLED(card->ctx);
 
-	/* any other value then NULL or 'n' will use some SM */
+	/* Default it to use SM if available */
 	use_sm = getenv("MYEID_USE_SM");
-	if (use_sm == NULL || use_sm[0] == 'n') { /* no or never */
-		sc_log (card->ctx, "Not using SM");
-		LOG_FUNC_RETURN(card->ctx, 0);
+	if (use_sm != NULL) {
+		if (use_sm[0] == 'n' || use_sm[0] == 'N') { /* no or never */
+			sc_log (card->ctx, "Not using SM");
+			LOG_FUNC_RETURN(card->ctx, 0);
+		}
+		if (use_sm[0] == 'a' || use_sm[0] == 'A') /* always */
+			priv->sm_params.flags |= NIST_SM_FLAGS_ALWAYS;
 	}
-	if (use_sm[0] == 'a') /* always */
-		priv->sm_params.flags |= NIST_SM_FLAGS_ALWAYS;
 
 	r = myeid_get_card_sm_params(card, &path_cert_signer, &priv->sm_params.csID);
 	SC_TEST_GOTO_ERR(card->ctx, SC_LOG_DEBUG_VERBOSE, r, "sm params not found or invalid");
@@ -476,8 +480,10 @@ static int myeid_card_reader_lock_obtained(sc_card_t *card, int was_reset)
 	r = sm_nist_check_sm_working(card, &priv->sm_params, was_reset, myeid_aid.value, myeid_aid.len,
                          0, NULL, NULL); /* FIXME use 0 to not test, should work with  1 for */
 #else
-	if (r < 0 || was_reset > 0)
+	if (r < 0 || was_reset > 0) {
+		sc_debug(card->ctx, SC_LOG_DEBUG_VERBOSE, "TESTING r: %d was_reset: %d", r, was_reset);
 	        r = iso7816_select_aid(card, myeid_aid.value, myeid_aid.len, NULL, NULL);
+	}
 #endif /* MYEID_SM_NIST */
 
 	if (r < 0) /* bad error return will show up in sc_lock as error*/
