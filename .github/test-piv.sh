@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# DEE force running of test-piv.c without any realmode or sm-nist-2
+
 set -ex -o xtrace
 
 source .github/setup-valgrind.sh
