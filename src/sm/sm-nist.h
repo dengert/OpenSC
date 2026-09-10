@@ -111,13 +111,6 @@ int
 sm_nist_open(sc_card_t *card);
 
 int
-<<<<<<< HEAD
-=======
-sm_nist_check_sm_working(sc_card_t *card, sm_nist_params_t *params,
-		int was_reset, u8 *aid, size_t aid_len, u8 pin_ref, int *logied_in,  int *tries_left);
-
-int
->>>>>>> cfb2a4a69 (sm-nist.c - only check working if pin_ref != 0)
 sm_nist_params_cleanup(sm_nist_params_t *params);
 
 int
