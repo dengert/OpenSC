@@ -1371,9 +1371,7 @@ sm_nist_start(sc_card_t *card, sm_nist_params_t *params)
 	struct iso_sm_ctx *sctx = NULL;
 	struct sm_nist_private_data *priv = NULL;
 	u8 *cert_blob = NULL;
-	size_t cert_blob_len = 0
-
-	SC_FUNC_CALLED(card->ctx, SC_LOG_DEBUG_VERBOSE);
+	size_t cert_blob_len = 0;
 
 	SC_FUNC_CALLED(card->ctx, SC_LOG_DEBUG_VERBOSE);
 
