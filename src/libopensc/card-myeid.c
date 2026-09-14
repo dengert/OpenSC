@@ -384,7 +384,6 @@ myeid_setup_sm_nist(struct sc_card *card)
 	SC_TEST_GOTO_ERR(card->ctx, SC_LOG_DEBUG_VERBOSE, r, "failed to read signer_cert_der");
 
 	priv->sm_params.flags = NIST_SM_FLAGS_SM_CERT_SIGNER_PRESENT;
-	priv->sm_params.flags |= NIST_SM_FLAGS_DEFER_OPEN;
 	priv->sm_params.sm_nist_pre_transmit_callback = myeid_sm_nist_pre_transmit_callback;
 
 	r = sm_nist_start(card, &priv->sm_params);
@@ -475,16 +474,10 @@ static int myeid_card_reader_lock_obtained(sc_card_t *card, int was_reset)
 
 	priv->init_flags |= MYEID_INIT_IN_READER_LOCK_OBTAINED;
 
-#ifdef MYEID_SM_NIST_XXXXXXX
-	/* check AID then check if SM session works, and restart if needed */
-	r = sm_nist_check_sm_working(card, &priv->sm_params, was_reset, myeid_aid.value, myeid_aid.len,
-                         0, NULL, NULL); /* FIXME use 0 to not test, should work with  1 for */
-#else
 	if (r < 0 || was_reset > 0) {
 		sc_debug(card->ctx, SC_LOG_DEBUG_VERBOSE, "TESTING r: %d was_reset: %d", r, was_reset);
 	        r = iso7816_select_aid(card, myeid_aid.value, myeid_aid.len, NULL, NULL);
 	}
-#endif /* MYEID_SM_NIST */
 
 	if (r < 0) /* bad error return will show up in sc_lock as error*/
 		goto err;
